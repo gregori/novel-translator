@@ -1,5 +1,13 @@
 # AI-DLC Audit Log
 
+## Pull Request Scope Expanded
+**Timestamp**: 2026-08-31T02:21:12Z
+**User Input**: "inclua tambem os arquivos .agents, .claude, .gitignore, agents.md e requirements.md"
+**AI Response**: "Prepared to add .agents, .claude, .gitignore, AGENTS.md and REQUIREMENTS.md to the existing documentation branch and pull request, while leaving skills-lock.json excluded."
+**Context**: Explicit expansion of PR #1 file scope.
+
+---
+
 ## Repository Documentation Delivery Requested
 **Timestamp**: 2026-08-31T02:15:08Z
 **User Input**: "faça commit dessa documentação em uma branch nova, faça push e pr para main"

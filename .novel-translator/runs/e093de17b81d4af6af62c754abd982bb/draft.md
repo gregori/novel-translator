@@ -14,7 +14,7 @@ The elderly librarian seemed to be a conscientious type, and bestsellers went on
 
 For Tsutomu, a mere student, borrowing books from the school library was simply more convenient.
 
-*"The teachers are nothing special, but the library has value."* That was Tsutomu's assessment of the school.
+_"The teachers are nothing special, but the library has value."_ That was Tsutomu's assessment of the school.
 
 It was not, by any stretch, the sort of thing that would ever appear in the "Student Voices" column of a school guide for prospective applicants.
 
@@ -24,7 +24,7 @@ No part-time job, no urgent errands—a place where he could read books for free
 
 He'd been planning to try a novel from a genre he rarely picked up, but that had come to nothing.
 
-*Well, it couldn't be helped,* he thought, shrugging as he headed for the entrance hall. He could see their side of the argument.
+_Well, it couldn't be helped,_ he thought, shrugging as he headed for the entrance hall. He could see their side of the argument.
 
 No one wants students dawdling around on a day with weather this foul. If an accident happened, it would be no laughing matter.
 
@@ -42,7 +42,7 @@ The trains were probably running on pretty shaky footing, but what about the car
 
 Buffeted by gales, blinded by sheets of rain—anyone driving in this looked to be in for a miserable time.
 
-*Even if it's for their kids, being a parent is rough.*
+_Even if it's for their kids, being a parent is rough._
 
 Tsutomu wouldn't want to be behind the wheel on a day like this. He didn't have a license, but even if he had, he'd want no part of it.
 
@@ -66,7 +66,7 @@ Her black hair, which normally flowed without a weight to it, looked heavy today
 
 Just seeing her face made him acutely aware that, for some reason, his spirits had lifted.
 
-Shiro's face surfaced in his mind. His imaginary friend was asking, *Is that what you call friendship?*
+Shiro's face surfaced in his mind. His imaginary friend was asking, _Is that what you call friendship?_
 
 He drove an invisible fist into the face of the friend in his head—smirk included—and shut him up.
 
@@ -122,13 +122,13 @@ He scanned the surroundings... the crowd had thinned out considerably, but stude
 
 He could feel clingy, sticky stares on him. Thanks to the Gariben Notebook affair, the general understanding had spread that Matsurika had set her sights on Tsutomu.
 
-*Kariya this time, huh...*
+_Kariya this time, huh..._
 
-*Gariben, of all people?*
+_Gariben, of all people?_
 
-*Wonder how long that'll last.*
+_Wonder how long that'll last._
 
-*Tachibana-san really has no standards, does she?*
+_Tachibana-san really has no standards, does she?_
 
 As the newest boyfriend candidate for Matsurika—the charismatic girl with a long line of romances—he'd been catching a different flavor of resentment than before, and more of it.
 
@@ -170,7 +170,7 @@ After a short stretch of silent contemplation, Matsurika opened her eyes and bea
 
 "So anyway, Kariya-kun, I have a favor to ask."
 
-No idea what he could possibly mean... or so she had apparently decided.
+No idea what she could possibly mean... or so she had apparently decided.
 
 She really was a girl built to lead people into sin.
 
@@ -202,7 +202,7 @@ Avoiding an instant answer, he looked outside. Still raining.
 
 He remembered the forecast: it was only supposed to get worse.
 
-*Walk her to the station, she says...*
+_Walk her to the station, she says..._
 
 The folding umbrella in his hand suddenly felt flimsy and inadequate.
 

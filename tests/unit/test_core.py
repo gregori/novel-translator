@@ -212,9 +212,53 @@ def test_gariben_translation_bible_loads() -> None:
 
 
 def test_context_is_deterministic() -> None:
-    """Equivalent bible data produces a stable context."""
-    bible = TranslationBible.model_validate({"title": "Novel", "terminology": {"B": "b", "A": "a"}})
-    assert build_context(bible) == build_context(bible)
+    """Reference-data ordering does not change the rendered context."""
+    first = TranslationBible.model_validate(
+        {
+            "title": "Novel",
+            "characters": [
+                {"name": "Yuki", "aliases": ["Yuki-chan", "Snow"]},
+                {"name": "Akira", "aliases": ["Aki"]},
+            ],
+            "terminology": {"B": "b", "A": "a"},
+        }
+    )
+    second = TranslationBible.model_validate(
+        {
+            "title": "Novel",
+            "characters": [
+                {"name": "Akira", "aliases": ["Aki"]},
+                {"name": "Yuki", "aliases": ["Snow", "Yuki-chan"]},
+            ],
+            "terminology": {"A": "a", "B": "b"},
+        }
+    )
+
+    assert build_context(first) == build_context(second)
+
+
+def test_example_bible_fields_are_rendered_in_translation_prompt(tmp_path: Path) -> None:
+    """Every functional field in the example bible reaches the provider prompt."""
+    bible = load_bible(Path("config/translation-bible.example.yaml"))
+    gateway = Mock()
+    gateway.translate.return_value = "translated"
+
+    TranslationService(Workspace(tmp_path), gateway).translate(
+        ChapterIdentity("example", 1),
+        SourceDocument("source", "test"),
+        bible,
+        "test",
+        "test-model",
+    )
+
+    prompt = gateway.translate.call_args.args[0]
+    assert "Title: Example Novel" in prompt
+    assert "Translate ja to en." in prompt
+    assert "Character: Haru\nAliases: Haru-kun" in prompt
+    assert "Term: 魔法 => magic" in prompt
+    assert "Honorific rule: Preserve meaningful honorifics." in prompt
+    assert "Naming convention: Use canonical character names." in prompt
+    assert "Style: Use natural English prose." in prompt
 
 
 def test_workspace_requires_current_approval_for_export(tmp_path: Path) -> None:

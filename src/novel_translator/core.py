@@ -251,8 +251,14 @@ def build_context(bible: TranslationBible) -> str:
         f"Title: {bible.title}",
         f"Translate {bible.source_language} to {bible.target_language}.",
     ]
-    lines.extend(f"Character: {item.name}" for item in sorted(bible.characters, key=lambda item: item.name.casefold()))
+    for character in sorted(bible.characters, key=lambda item: item.name.casefold()):
+        lines.append(f"Character: {character.name}")
+        if character.aliases:
+            aliases = ", ".join(sorted(character.aliases, key=str.casefold))
+            lines.append(f"Aliases: {aliases}")
     lines.extend(f"Term: {source} => {target}" for source, target in sorted(bible.terminology.items()))
+    lines.extend(f"Honorific rule: {item}" for item in bible.honorific_rules)
+    lines.extend(f"Naming convention: {item}" for item in bible.naming_conventions)
     lines.extend(f"Style: {item}" for item in bible.style_instructions)
     return "\n".join(lines)
 

@@ -1,0 +1,17 @@
+{
+  "bible_hash": "ff3523bc6f110a33aa17b69b7ad438e9b3a537cec707acb59a0c586ebde86929",
+  "bible_version": "preliminary-chapters-01-05",
+  "identity": {
+    "chapter": 27,
+    "novel": "gariben-kun-to-uraaka-san"
+  },
+  "model": "deepseek-v4-flash",
+  "prompt_hash": "00acddf79e21ae73c58b84a9e00efb0baa2a3c56a89fdea2cef8aa22b5d56de4",
+  "prompt_version": "v1",
+  "provider": "opencode-go",
+  "run_id": "24be96b8060c4b95851c645601aec3c2",
+  "source_hash": "5ac770195a69da2694708f9c4ec84766f4d566c4911bec9e9a23e28aba4258b8",
+  "status": "started",
+  "timestamp": "2026-09-01T02:43:32.607385+00:00",
+  "volume": 3
+}

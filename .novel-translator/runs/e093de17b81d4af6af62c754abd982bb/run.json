@@ -1,0 +1,30 @@
+{
+  "bible_hash": "87009cb9c0adfb2b9ddf2e755d7e99749da2d2891f9456b15878c30439314899",
+  "bible_version": "chapters-01-26",
+  "character_counts": {
+    "draft": 8878,
+    "source": 3542
+  },
+  "completed_at": "2026-09-01T13:30:16.662357+00:00",
+  "draft_title": "Chapter 28: After School on a Certain Day in the Rainy Season - Part 2",
+  "duration_seconds": 382.738,
+  "identity": {
+    "chapter": 28,
+    "novel": "gariben-kun-to-uraaka-san"
+  },
+  "model": "glm-5.3-flash",
+  "prompt_hash": "f999c761befd8eee3bd8fd8ca9ac912c3baa4e859e3c71247b486190ee0b9bd1",
+  "prompt_version": "v1",
+  "provider": "opencode-go",
+  "run_id": "e093de17b81d4af6af62c754abd982bb",
+  "source_hash": "552a3adc5da8dabff9ae2f95530a9709de55f521a98a10f6c5f73a4bc31aae7a",
+  "source_title": null,
+  "status": "draft_completed",
+  "timestamp": "2026-09-01T13:23:53.924097+00:00",
+  "token_estimates": {
+    "draft": 2220,
+    "method": "characters_per_token: ja=1, other_languages=4",
+    "source": 3542
+  },
+  "volume": 3
+}

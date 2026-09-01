@@ -1,0 +1,14 @@
+title: Example Novel
+source_language: ja
+target_language: en
+characters:
+  - name: Haru
+    aliases: [Haru-kun]
+terminology:
+  魔法: magic
+honorific_rules:
+  - Preserve meaningful honorifics.
+naming_conventions:
+  - Use canonical character names.
+style_instructions:
+  - Use natural English prose.

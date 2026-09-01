@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "novel-translator"
+version = "0.1.0"
+description = "Auditable local CLI for assisted Japanese-to-English novel translation."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+  "filelock>=3.18",
+  "httpx>=0.28",
+  "pydantic>=2.11",
+  "python-dotenv>=1.2.3",
+  "PyYAML>=6.0",
+  "typer>=0.16",
+]
+
+[project.optional-dependencies]
+dev = [
+  "hypothesis>=6.131",
+  "pytest>=8.4",
+  "ruff>=0.12",
+]
+
+[project.scripts]
+novel-translator = "novel_translator.cli.app:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/novel_translator"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = ["integration: exercises filesystem or command boundaries"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "C4", "UP", "SIM"]
+ignore = ["B008", "E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pyright]
+pythonVersion = "3.14"
+typeCheckingMode = "strict"
+include = ["src"]
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.411",
+]

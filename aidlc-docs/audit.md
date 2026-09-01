@@ -1,5 +1,101 @@
 # AI-DLC Audit Log
 
+## Code Generation - Automatic .env Loading
+**Timestamp**: 2026-08-31T04:00:00Z
+**User Input**: "sim, adicione. Eu esperava isso do projeto, inclusive"
+**AI Response**: "Added python-dotenv as a runtime dependency. The CLI now reads .env in the current directory before parsing commands, preserves values already exported by the process, provides a safe .env.example, ignores .env in Git, and documents the behavior. Ten tests, Pyright, Ruff and the rebuilt package passed."
+**Context**: User-authorized correction to provider configuration behavior; Code Generation Step 17 completed and Build and Test revalidated.
+
+---
+
+## Code Generation - Volume Metadata
+**Timestamp**: 2026-08-31T03:50:00Z
+**User Input**: "implemente"
+**AI Response**: "Implemented optional positive --volume on translate, persisted it in run.json, rendered it in exported Markdown front matter, documented the behavior and added a unit test. Rebuilt the distribution; pytest passed with 9 tests and Pyright/Ruff passed."
+**Context**: User-authorized correction to the approved Code Generation artifact; plan Step 16 completed and Build and Test revalidated.
+
+---
+
+## Translation Bible - Preliminary Research
+**Timestamp**: 2026-08-31T03:40:00Z
+**User Input**: "leia os primeiros capítulos da novel gariben-kun to uraaka-san, em novels-site (d:\\novels-site) e construa uma translation bible preliminar para mim."
+**AI Response**: "Read index.md and chapters 01 through 05 in the novels-site repository. Created a preliminary strict YAML translation bible with verified names, terminology, honorific and style rules; deliberately kept RIKA separate from Tachibana Matsurika because the reviewed chapters do not establish that identity."
+**Context**: Content research and creation of a novel-specific configuration artifact.
+
+---
+
+## Build and Test - README Provider Configuration
+**Timestamp**: 2026-08-31T03:30:00Z
+**User Input**: "fora isso, há a questão das variáveis de ambiente. Inclua isso no README"
+**AI Response**: "Updated README.md with the OpenAI-compatible provider contract, required environment variables, PowerShell examples, CLI overrides, secret-handling guidance and the limitation that .env files are not supported in this MVP."
+**Context**: Documentation correction requested while Build and Test artifacts await approval.
+
+---
+
+## Build and Test - Pyright Validation
+**Timestamp**: 2026-08-31T03:20:00Z
+**User Input**: "passe também pyright, notei vários warnings de linting por pyright"
+**AI Response**: "Added Pyright as a uv development dependency, corrected 13 strict typing errors in the CLI, Pydantic model, provider parsing and serialization helpers, then verified Pyright, pytest and Ruff successfully."
+**Context**: Additional static-analysis validation requested during Build and Test review.
+
+---
+
+## Build and Test Stage
+**Timestamp**: 2026-08-31T03:10:00Z
+**User Input**: "siga para build & test"
+**Build Status**: Success
+**Test Status**: Pass
+**Files Generated**:
+- build-instructions.md
+- unit-test-instructions.md
+- integration-test-instructions.md
+- performance-test-instructions.md
+- build-and-test-summary.md
+**AI Response**: "Recorded approval of Code Generation, built the wheel and source distribution with uv, and validated eight tests plus Ruff lint and formatting. Generated complete Build and Test instructions and summary."
+**Context**: Code Generation approval; Build and Test Steps 1 through 10 complete; artifacts awaiting explicit approval before Operations.
+
+---
+
+## Code Generation - Dependency Installation and Validation
+**Timestamp**: 2026-08-31T03:00:00Z
+**User Input**: "você não pode instalar via uv? use uv para instalar"
+**AI Response**: "Installed development dependencies with uv after adding the missing README declared by pyproject.toml. Corrected lint and test failures. uv run pytest passed with 8 tests; Ruff check and formatting check passed for src and tests. Code Generation is complete and awaits artifact approval."
+**Context**: Code Generation Step 15 complete; standardized completion approval gate opened.
+
+---
+
+## Code Generation - Plan Approval and Execution
+**Timestamp**: 2026-08-31T02:35:00Z
+**User Input**: "aprovo o plado de code generation"
+**AI Response**: "Interpreted the unambiguous typo as approval of the pending Code Generation plan. Created the Python package, CLI, translation workflow, immutable workspace, approval/export behavior, examples, tests and implementation summary. Marked steps 1-14 complete. Syntax validation passed with python -m compileall; pytest and Ruff could not run because the available virtual environment lacks pytest and pip."
+**Context**: Code Generation Part 1 approval and Part 2 Steps 1-14 complete; Step 15 validation remains pending.
+
+---
+
+## NFR Design Approval and Code Generation Plan
+**Timestamp**: 2026-08-31T02:30:00Z
+**User Input**: "siga para code generation"
+**AI Response**: "Recorded approval of the pending NFR Design artifacts, kept Infrastructure Design skipped as approved, and created the detailed Code Generation plan for novel-translator-cli. Code generation remains blocked until this plan receives explicit approval."
+**Context**: NFR Design approval gate passed; Code Generation Part 1 Steps 1 through 6 complete.
+
+---
+
+## Code Generation - Plan Approval Prompt
+**Timestamp**: 2026-08-31T02:30:00Z
+**User Input**: "siga para code generation"
+**AI Response**: "Requested explicit approval of aidlc-docs/construction/plans/novel-translator-cli-code-generation-plan.md before executing any code-generation step."
+**Context**: Code Generation Part 1 Steps 6 and 7; generation is gated on the complete plan.
+
+---
+
+## Pull Request Merged
+**Timestamp**: 2026-08-31T02:24:34Z
+**User Input**: "merged"
+**AI Response**: "Recorded that PR #1 was merged. Kept the NFR Design approval gate open because repository merge status is separate from explicit design approval."
+**Context**: Repository delivery completed; workflow remains at NFR Design artifact approval.
+
+---
+
 ## Pull Request Scope Expanded
 **Timestamp**: 2026-08-31T02:21:12Z
 **User Input**: "inclua tambem os arquivos .agents, .claude, .gitignore, agents.md e requirements.md"

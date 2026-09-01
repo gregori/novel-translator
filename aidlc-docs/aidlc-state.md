@@ -5,7 +5,7 @@
 - **Project Type**: Greenfield
 - **Start Date**: 2026-08-30T14:02:22Z
 - **Current Phase**: CONSTRUCTION
-- **Current Stage**: NFR Design - Artifacts Awaiting Approval (`novel-translator-cli`)
+- **Current Stage**: Build and Test - Artifacts Awaiting Approval (`novel-translator-cli`)
 
 ## Workspace State
 - **Existing Code**: No
@@ -37,10 +37,10 @@
 - [x] INCEPTION - Units Generation
 - [x] CONSTRUCTION - Functional Design
 - [x] CONSTRUCTION - NFR Requirements (EXECUTE per applicable unit)
-- [ ] CONSTRUCTION - NFR Design (EXECUTE per applicable unit)
+- [x] CONSTRUCTION - NFR Design (EXECUTE per applicable unit)
 - [ ] CONSTRUCTION - Infrastructure Design (SKIP)
-- [ ] CONSTRUCTION - Code Generation (EXECUTE per unit)
-- [ ] CONSTRUCTION - Build and Test
+- [x] CONSTRUCTION - Code Generation (approved at 2026-08-31T03:10:00Z)
+- [x] CONSTRUCTION - Build and Test (artifacts awaiting approval)
 - [ ] OPERATIONS - Placeholder
 
 ## Workspace Detection Findings
@@ -125,10 +125,12 @@
 - **NFR Decisions**: Python 3.14; uv/Hatchling; Typer; Pydantic v2; HTTPX sync; Pytest/Hypothesis; Ruff/Pyright strict; algorithmic performance gate; 120-second timeout and three attempts; exclusive mutable workspace lock; explicit protected retention; human plus JSON output; local permission hardening; Windows/macOS required.
 - **NFR Requirements Artifacts**: `nfr-requirements.md`, `tech-stack-decisions.md`.
 - **NFR Requirements PBT Compliance**: Compliant for all enabled partial PBT rules; no blocking finding.
-- **NFR Design**: Complete; artifacts generated and awaiting explicit approval.
+- **NFR Design**: Approved at 2026-08-31T02:30:00Z.
 - **NFR Design Plan**: `aidlc-docs/construction/plans/novel-translator-cli-nfr-design-plan.md`.
 - **NFR Design Clarification**: `aidlc-docs/construction/plans/novel-translator-cli-nfr-design-clarification-questions.md`.
 - **NFR Design Decisions**: `filelock`; fail-fast lock by default; compensating export rollback; incremental source pipeline; provider-specific token estimator with conservative fallback; complexity-ratio performance gate; reject symlinks/junctions; central secret redaction; `WorkspaceSafetyService` facade over specialized ports.
 - **NFR Design Artifacts**: `nfr-design-patterns.md`, `logical-components.md`.
 - **NFR Design Extension Compliance**: Partial PBT compliant; Security and Resiliency baselines N/A because disabled; no blocking finding.
 - **Infrastructure Design**: Skipped by approved execution plan; local CLI has no deployment infrastructure changes.
+- **Code Generation**: All 17 plan steps are complete. The CLI accepts `--volume`, persists it in `run.json` and exports it as Markdown front matter. It loads `.env` automatically without overriding process environment values.
+- **Build and Test**: `uv build` produced wheel and source distribution after the `.env` change. Ten unit/property tests, Pyright strict, Ruff lint and format checks passed. Build and test instruction artifacts are complete; integration and performance instructions are provided for controlled later execution.

@@ -1,0 +1,54 @@
+{
+  "title": "The Studious Boy and the Secret Account Girl",
+  "source_language": "ja",
+  "target_language": "en",
+  "characters": [
+    {
+      "name": "Kariya Tsutomu",
+      "aliases": [
+        "Tsutomu",
+        "Kariya-kun"
+      ]
+    },
+    {
+      "name": "Tachibana Matsurika",
+      "aliases": [
+        "Matsurika",
+        "Tachibana-san",
+        "Matsurika-san"
+      ]
+    }
+  ],
+  "terminology": {
+    "ガリ勉": "studious boy (but keep Gariben as the alias the students give the boy)",
+    "裏アカ": "secret account",
+    "裏垢": "secret account",
+    "SNS": "social media",
+    "兄さん": "Nii-san",
+    "ゴールデンウィーク": "Golden Week",
+    "担任": "homeroom teacher",
+    "生徒指導": "student discipline teacher",
+    "文化祭": "school festival",
+    "クラスのアイドル": "class idol",
+    "中学校": "middle school"
+  },
+  "honorific_rules": [
+    "Preserve Japanese honorifics such as -san and -kun when they signal relationship or social distance.",
+    "Preserve family vocatives such as Nii-san unless English dialogue requires an explicit natural equivalent.",
+    "Preserve school terms like sensei, senpai and kouhai, unless the English dialogue requires an explicit natural equivalent."
+  ],
+  "naming_conventions": [
+    "Keep Japanese names in surname-first order: Kariya Tsutomu and Tachibana Matsurika.",
+    "Keep the anonymous account name as RIKA in all capitals.",
+    "Do not treat RIKA as an established alias for Tachibana Matsurika until the text confirms it."
+  ],
+  "style_instructions": [
+    "Use natural contemporary English for a Japanese high-school romantic comedy.",
+    "Keep narration in close third person around Kariya Tsutomu and preserve his dry, judgmental inner voice.",
+    "Preserve clearly marked internal monologue and social-media posts as distinct text when present in the source.",
+    "When it's clear that a sentence is an internal thought, style it in italic.",
+    "Translate sexual material accurately and neutrally; do not intensify, sanitize, or add detail.",
+    "Preserve Japanese school and cultural terms that have an established English usage, including Golden Week and school festival."
+  ],
+  "version": "preliminary-chapters-01-05"
+}

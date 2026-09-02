@@ -8,7 +8,6 @@ import typer
 from dotenv import load_dotenv
 
 from novel_translator.core import (
-    OpenAICompatibleGateway,
     TranslationService,
     Workspace,
     export_draft,
@@ -18,6 +17,7 @@ from novel_translator.core import (
 from novel_translator.core import (
     approve as approve_draft,
 )
+from novel_translator.providers import OpenCodeGoConfig, resolve_provider
 from novel_translator.shared.errors import NovelTranslatorError
 from novel_translator.shared.models import ChapterIdentity
 
@@ -53,15 +53,19 @@ def translate(
 ) -> None:
     """Translate a UTF-8 file or Kakuyomu URL into an immutable draft."""
     try:
+        selection = resolve_provider(
+            provider,
+            OpenCodeGoConfig(base_url, model, api_key, request_timeout),
+        )
         run_id = TranslationService(
             Workspace(workspace),
-            OpenAICompatibleGateway(base_url, model, api_key, request_timeout),
+            selection.gateway,
         ).translate(
             ChapterIdentity(novel, chapter),
             read_source(source),
             load_bible(bible),
-            provider,
-            model,
+            selection.name,
+            selection.model,
             volume,
             lambda index, total, attempt: typer.echo(
                 f"Translating segment {index}/{total} (attempt {attempt}/3)...", err=True

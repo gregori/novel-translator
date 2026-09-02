@@ -2,7 +2,6 @@
 
 import json
 from pathlib import Path
-from threading import Event
 from unittest.mock import Mock
 
 import httpx
@@ -12,7 +11,6 @@ from hypothesis import strategies as st
 
 from novel_translator.core import (
     ApprovalEvent,
-    OpenAICompatibleGateway,
     SourceDocument,
     TranslationBible,
     TranslationService,
@@ -159,43 +157,6 @@ def test_translation_reports_transport_errors_before_retrying(tmp_path: Path) ->
     error = retry_notice.call_args.args[3]
     assert isinstance(error, httpx.ConnectError)
     assert str(error) == "offline"
-
-
-def test_gateway_enforces_a_total_request_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A provider that keeps sending data cannot block the CLI indefinitely."""
-    release_request = Event()
-
-    def delayed_post(*_: object, **__: object) -> httpx.Response:
-        release_request.wait()
-        return httpx.Response(200, json={"choices": [{"message": {"content": "translated"}}]})
-
-    monkeypatch.setattr("novel_translator.core.httpx.post", delayed_post)
-    gateway = OpenAICompatibleGateway("https://example.test/v1", "model", "key", timeout_seconds=0.01)
-
-    try:
-        with pytest.raises(httpx.ReadTimeout, match="did not complete"):
-            gateway.translate("prompt")
-    finally:
-        release_request.set()
-
-
-def test_gateway_reports_safe_provider_error_details(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Provider status errors retain a useful, bounded diagnostic message."""
-
-    def forbidden_post(*_: object, **__: object) -> httpx.Response:
-        request = httpx.Request("POST", "https://example.test/v1/chat/completions")
-        return httpx.Response(
-            401,
-            json={"error": {"message": "Invalid API key"}},
-            headers={"x-request-id": "request-123"},
-            request=request,
-        )
-
-    monkeypatch.setattr("novel_translator.core.httpx.post", forbidden_post)
-    gateway = OpenAICompatibleGateway("https://example.test/v1", "model", "key")
-
-    with pytest.raises(ValidationError, match="HTTP 401: Invalid API key. Request ID: request-123"):
-        gateway.translate("prompt")
 
 
 def test_bible_rejects_alias_matching_canonical_name() -> None:

@@ -10,7 +10,7 @@ uv sync --extra dev
 
 ## Configuração do provider
 
-O MVP usa um endpoint compatível com OpenAI; o provider padrão registrado nos metadados é `opencode-go`. A CLI carrega automaticamente o arquivo `.env` do diretório atual, sem sobrescrever variáveis já exportadas pelo sistema. Copie `.env.example` para `.env` e preencha os valores:
+O MVP usa o SDK oficial da OpenAI para acessar o endpoint OpenAI-compatible do provider suportado, `opencode-go`. A CLI carrega automaticamente o arquivo `.env` do diretório atual, sem sobrescrever variáveis já exportadas pelo sistema. Copie `.env.example` para `.env` e preencha os valores:
 
 ```powershell
 Copy-Item .env.example .env
@@ -23,7 +23,7 @@ Copy-Item .env.example .env
 | `NOVEL_TRANSLATOR_MODEL` | Sim | Identificador do modelo enviado ao endpoint. |
 | `NOVEL_TRANSLATOR_API_KEY` | Sim | Chave de API enviada como Bearer token; nunca a grave em YAML, commits ou artefatos de run. |
 
-Também é possível informar os mesmos valores diretamente como `--base-url`, `--model` e `--api-key`. Use `--provider opencode-go` para substituir o nome registrado no `run.json`; essa opção é metadado e não altera o protocolo HTTP.
+Também é possível informar os mesmos valores diretamente como `--base-url`, `--model` e `--api-key`. `--provider opencode-go` seleciona explicitamente o adapter suportado; outros valores são rejeitados antes da criação do run.
 
 Variáveis já definidas no PowerShell ou no gerenciador de segredos do sistema têm precedência sobre `.env`.
 

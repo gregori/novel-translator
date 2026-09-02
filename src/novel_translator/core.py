@@ -14,8 +14,6 @@ from datetime import UTC, date, datetime
 from html.parser import HTMLParser
 from math import ceil
 from pathlib import Path
-from queue import Empty, Queue
-from threading import Thread
 from typing import Any, Protocol, cast
 
 import httpx
@@ -129,86 +127,6 @@ class TranslatorGateway(Protocol):
     def translate(self, prompt: str) -> str:
         """Translate one prompt and return non-empty text."""
         ...
-
-
-class OpenAICompatibleGateway:
-    """Small synchronous adapter for OpenAI-compatible endpoints."""
-
-    def __init__(
-        self,
-        base_url: str,
-        model: str,
-        api_key: str,
-        timeout_seconds: float = 90.0,
-    ) -> None:
-        self._base_url = base_url.rstrip("/")
-        self._model = model
-        self._api_key = api_key
-        self._timeout_seconds = timeout_seconds
-
-    def translate(self, prompt: str) -> str:
-        """Call the configured chat-completions endpoint."""
-        result_queue: Queue[httpx.Response | Exception] = Queue(maxsize=1)
-
-        def post() -> None:
-            try:
-                response = httpx.post(
-                    f"{self._base_url}/chat/completions",
-                    headers={"Authorization": f"Bearer {self._api_key}"},
-                    json={
-                        "model": self._model,
-                        "messages": [{"role": "user", "content": prompt}],
-                    },
-                    timeout=httpx.Timeout(self._timeout_seconds),
-                )
-            except Exception as error:
-                result_queue.put(error)
-            else:
-                result_queue.put(response)
-
-        Thread(target=post, daemon=True).start()
-        try:
-            result = result_queue.get(timeout=self._timeout_seconds)
-        except Empty as error:
-            raise httpx.ReadTimeout(
-                f"Provider did not complete the request within {self._timeout_seconds} seconds."
-            ) from error
-        if isinstance(result, Exception):
-            raise result
-        response = result
-        try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError as error:
-            raise ValidationError(self._provider_error(error.response)) from error
-        payload = cast(dict[str, Any], response.json())
-        choices = cast(list[dict[str, Any]], payload["choices"])
-        message = cast(dict[str, str], choices[0]["message"])
-        content = message["content"].strip()
-        if not content:
-            raise ValidationError("Provider returned an empty translation.")
-        return content
-
-    @staticmethod
-    def _provider_error(response: httpx.Response) -> str:
-        """Return a bounded provider error without exposing request secrets."""
-        try:
-            payload = cast(dict[str, object], response.json())
-            error = payload.get("error")
-            error_message = (
-                cast(dict[str, object], error).get("message") if isinstance(error, dict) else None
-            )
-            message = payload.get("message")
-            if isinstance(error_message, str):
-                detail = error_message
-            elif isinstance(message, str):
-                detail = message
-            else:
-                detail = "No error detail returned."
-        except (ValueError, TypeError):
-            detail = "No JSON error detail returned."
-        request_id = response.headers.get("x-request-id")
-        suffix = f" Request ID: {request_id}." if request_id else ""
-        return f"Provider rejected request with HTTP {response.status_code}: {detail[:500]}.{suffix}"
 
 
 def load_bible(path: Path) -> TranslationBible:

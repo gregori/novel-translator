@@ -132,12 +132,9 @@ def inspect(
 ) -> None:
     """Inspect run metadata; draft content is opt-in."""
     try:
-        root = Workspace(workspace).root / "runs" / run_id
-        data = json.loads((root / "run.json").read_text(encoding="utf-8"))
-        if include_draft:
-            data["draft"] = (root / "draft.md").read_text(encoding="utf-8")
-    except (OSError, json.JSONDecodeError) as error:
-        fail(NovelTranslatorError(f"Cannot inspect run: {error}"))
+        data = Workspace(workspace).inspect_run(run_id, include_draft)
+    except NovelTranslatorError as error:
+        fail(error)
     typer.echo(json.dumps(data, ensure_ascii=False, indent=2))
 
 

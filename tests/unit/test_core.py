@@ -36,6 +36,8 @@ from novel_translator.shared.errors import (
 from novel_translator.shared.models import ChapterIdentity, RunStatus
 from novel_translator.shared.utils import json_dumps, sha256_text
 
+VALID_RUN_ID = "0" * 32
+
 
 @given(st.lists(st.text(max_size=20), min_size=1, max_size=20).map("\n".join))
 def test_segment_text_round_trips_source(text: str) -> None:
@@ -225,7 +227,7 @@ def test_extract_draft_title_ignores_unmatched_heading() -> None:
 def test_export_uses_an_inferred_draft_title(tmp_path: Path) -> None:
     """Export uses a matching draft heading when no explicit title is supplied."""
     workspace = Workspace(tmp_path)
-    run_dir = tmp_path / "runs" / "run"
+    run_dir = tmp_path / "runs" / VALID_RUN_ID
     run_dir.mkdir(parents=True)
     (run_dir / "draft.md").write_text(
         "Episode 7: Rainy Day\n\nDraft", encoding="utf-8"
@@ -233,9 +235,9 @@ def test_export_uses_an_inferred_draft_title(tmp_path: Path) -> None:
     (run_dir / "run.json").write_text(
         '{"identity": {"chapter": 7}}', encoding="utf-8"
     )
-    approve(workspace, "run")
+    approve(workspace, VALID_RUN_ID)
 
-    exported = export_draft(workspace, "run", tmp_path / "out.md")
+    exported = export_draft(workspace, VALID_RUN_ID, tmp_path / "out.md")
 
     assert 'chapterTitle: "Episode 7: Rainy Day"' in exported.read_text(
         encoding="utf-8"
@@ -459,11 +461,13 @@ def test_workspace_requires_current_approval_for_export(
 ) -> None:
     """Export does not occur before an exact hash approval."""
     workspace = Workspace(tmp_path)
-    run_dir = tmp_path / "runs" / "run"
+    run_dir = tmp_path / "runs" / VALID_RUN_ID
     run_dir.mkdir(parents=True)
     (run_dir / "draft.md").write_text("Draft", encoding="utf-8")
     with pytest.raises(ApprovalRequired):
-        export_draft(workspace, "run", tmp_path / "out.md", "Title")
+        export_draft(
+            workspace, VALID_RUN_ID, tmp_path / "out.md", "Title"
+        )
 
 
 def test_latest_matching_approval_event_controls_eligibility(
@@ -497,15 +501,15 @@ def test_workspace_rejects_paths_outside_root(tmp_path: Path) -> None:
 def test_export_uses_volume_persisted_in_run_metadata(tmp_path: Path) -> None:
     """Export preserves the optional run volume in the Markdown front matter."""
     workspace = Workspace(tmp_path)
-    run_dir = tmp_path / "runs" / "run"
+    run_dir = tmp_path / "runs" / VALID_RUN_ID
     run_dir.mkdir(parents=True)
     (run_dir / "draft.md").write_text("Draft", encoding="utf-8")
     (run_dir / "run.json").write_text('{"volume": 2}', encoding="utf-8")
-    approve(workspace, "run")
+    approve(workspace, VALID_RUN_ID)
 
     exported = export_draft(
         workspace,
-        "run",
+        VALID_RUN_ID,
         tmp_path / "chapter.md",
         "Chapter 1",
         publish_date="2026-08-24",

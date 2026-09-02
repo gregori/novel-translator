@@ -11,6 +11,8 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from novel_translator.core import (
+    PROMPT_TEMPLATE,
+    PROMPT_TEMPLATE_VERSION,
     ApprovalEvent,
     SourceDocument,
     TranslationBible,
@@ -22,6 +24,8 @@ from novel_translator.core import (
     export_draft,
     extract_draft_title,
     load_bible,
+    prompt_manifest_hash,
+    render_translation_prompt,
     segment_text,
 )
 from novel_translator.shared.errors import (
@@ -264,6 +268,95 @@ def test_translation_supplies_previous_passage_when_segmented(
         in second_prompt
     )
     assert "First translated passage." in second_prompt
+
+
+def test_translation_records_exact_ordered_prompt_provenance(
+    tmp_path: Path,
+) -> None:
+    """Every gateway call is linked to its exact UTF-8 rendered prompt."""
+    gateway = Mock()
+    gateway.translate.side_effect = [
+        "First translation.",
+        "Second translation.",
+    ]
+    workspace = Workspace(tmp_path)
+
+    run_id = TranslationService(workspace, gateway).translate(
+        ChapterIdentity("novel", 1),
+        SourceDocument("first\nsecond\n", "test"),
+        TranslationBible.model_validate({"title": "Novel"}),
+        "test",
+        "test-model",
+        segment_limit=7,
+    )
+
+    run = json.loads(
+        (tmp_path / "runs" / run_id / "run.json").read_text(encoding="utf-8")
+    )
+    manifest = run["segment_manifest"]
+    prompts = [call.args[0] for call in gateway.translate.call_args_list]
+    assert run["schema_version"] == 2
+    assert run["prompt_template_version"] == PROMPT_TEMPLATE_VERSION
+    assert run["prompt_template_hash"] == sha256_text(PROMPT_TEMPLATE)
+    assert run["context_hash"] == sha256_text(
+        build_context(TranslationBible.model_validate({"title": "Novel"}))
+    )
+    assert [item["segment_index"] for item in manifest] == [1, 2]
+    assert [item["rendered_prompt_hash"] for item in manifest] == [
+        sha256_text(prompt) for prompt in prompts
+    ]
+    assert manifest[0]["source_segment_hash"] == sha256_text("first\n")
+    assert manifest[0]["continuity_context_hash"] == sha256_text("")
+    assert manifest[1]["continuity_context_hash"] != sha256_text("")
+    assert manifest[0]["gateway_calls"] == [
+        {"attempt": 1, "rendered_prompt_hash": sha256_text(prompts[0])}
+    ]
+    assert run["prompt_hash"] == prompt_manifest_hash(manifest)
+
+
+def test_rendered_prompt_hash_is_deterministic_and_sensitive() -> None:
+    """Template, context, source, index, and continuity affect prompt hashes."""
+    inputs = ("context", "continuity", 1, "source")
+    baseline = render_translation_prompt(*inputs)
+    assert sha256_text(render_translation_prompt(*inputs)) == sha256_text(
+        baseline
+    )
+    variants = [
+        render_translation_prompt("changed", *inputs[1:]),
+        render_translation_prompt(inputs[0], "changed", *inputs[2:]),
+        render_translation_prompt(*inputs[:2], 2, inputs[3]),
+        render_translation_prompt(*inputs[:3], "changed"),
+        render_translation_prompt(*inputs, template="changed {context}"),
+    ]
+    assert all(
+        sha256_text(variant) != sha256_text(baseline) for variant in variants
+    )
+
+
+def test_gateway_retries_are_all_associated_with_the_prompt(
+    tmp_path: Path,
+) -> None:
+    """Repeated calls remain auditable even though their prompt is identical."""
+    gateway = Mock()
+    gateway.translate.side_effect = [
+        httpx.ConnectError("offline"),
+        "translated",
+    ]
+
+    run_id = TranslationService(Workspace(tmp_path), gateway).translate(
+        ChapterIdentity("novel", 1),
+        SourceDocument("source", "test"),
+        TranslationBible.model_validate({"title": "Novel"}),
+        "test",
+        "test-model",
+    )
+
+    run = json.loads(
+        (tmp_path / "runs" / run_id / "run.json").read_text(encoding="utf-8")
+    )
+    calls = run["segment_manifest"][0]["gateway_calls"]
+    assert [call["attempt"] for call in calls] == [1, 2]
+    assert len({call["rendered_prompt_hash"] for call in calls}) == 1
 
 
 def test_translation_reports_transport_errors_before_retrying(

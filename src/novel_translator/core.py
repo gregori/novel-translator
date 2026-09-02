@@ -30,14 +30,21 @@ from novel_translator.shared.errors import (
 )
 from novel_translator.shared.models import (
     ChapterIdentity,
+    PromptCall,
     RunPhase,
     RunRecord,
     RunStatus,
+    SegmentPromptManifest,
 )
 from novel_translator.shared.utils import json_dumps, sha256_text
 
 DEFAULT_SEGMENT_LIMIT = 60_000
 PREVIOUS_TRANSLATION_CONTEXT_CHARS = 12_000
+RUN_SCHEMA_VERSION = 2
+PROMPT_TEMPLATE_VERSION = "v1"
+PROMPT_TEMPLATE = (
+    "{context}{continuity_context}\n\nSegment {segment_index}:\n{source_segment}\n\nReturn only English translation."
+)
 TERMINAL_RUN_STATUSES: Final[frozenset[RunStatus]] = frozenset(
     {RunStatus.DRAFT_COMPLETED, RunStatus.FAILED, RunStatus.INTERRUPTED}
 )
@@ -52,9 +59,7 @@ class PageTitleParser(HTMLParser):
         self.document_title: list[str] = []
         self._inside_title = False
 
-    def handle_starttag(
-        self, tag: str, attrs: list[tuple[str, str | None]]
-    ) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         """Track title-bearing tags."""
         attributes = dict(attrs)
         if tag == "meta" and attributes.get("property") == "og:title":
@@ -93,9 +98,7 @@ class TranslationBible(BaseModel):
     title: str
     source_language: str = "ja"
     target_language: str = "en"
-    characters: list[BibleCharacter] = Field(
-        default_factory=list[BibleCharacter]
-    )
+    characters: list[BibleCharacter] = Field(default_factory=list[BibleCharacter])
     terminology: dict[str, str] = Field(default_factory=dict)
     honorific_rules: list[str] = Field(default_factory=list)
     naming_conventions: list[str] = Field(default_factory=list)
@@ -106,15 +109,9 @@ class TranslationBible(BaseModel):
     def validate_canonical_names(self) -> TranslationBible:
         """Reject duplicate names and aliases that collide with canonical names."""
         names = [character.name.casefold() for character in self.characters]
-        aliases = [
-            alias.casefold()
-            for character in self.characters
-            for alias in character.aliases
-        ]
+        aliases = [alias.casefold() for character in self.characters for alias in character.aliases]
         if len(names) != len(set(names)) or set(names).intersection(aliases):
-            raise ValueError(
-                "Character canonical names and aliases must be unambiguous."
-            )
+            raise ValueError("Character canonical names and aliases must be unambiguous.")
         return self
 
 
@@ -165,15 +162,11 @@ def read_source(value: str) -> SourceDocument:
         title_parser.feed(response.text)
         text = re.sub(r"<[^>]+>", "", response.text).strip()
         if not text:
-            raise ValidationError(
-                "Kakuyomu page did not contain readable text."
-            )
+            raise ValidationError("Kakuyomu page did not contain readable text.")
         return SourceDocument(text, value, title_parser.title())
     path = Path(value)
     if not path.is_file():
-        raise ValidationError(
-            "Source must be a readable file or Kakuyomu URL."
-        )
+        raise ValidationError("Source must be a readable file or Kakuyomu URL.")
     try:
         text = path.read_text(encoding="utf-8").strip()
     except UnicodeDecodeError as error:
@@ -189,21 +182,14 @@ def build_context(bible: TranslationBible) -> str:
         f"Title: {bible.title}",
         f"Translate {bible.source_language} to {bible.target_language}.",
     ]
-    for character in sorted(
-        bible.characters, key=lambda item: item.name.casefold()
-    ):
+    for character in sorted(bible.characters, key=lambda item: item.name.casefold()):
         lines.append(f"Character: {character.name}")
         if character.aliases:
             aliases = ", ".join(sorted(character.aliases, key=str.casefold))
             lines.append(f"Aliases: {aliases}")
-    lines.extend(
-        f"Term: {source} => {target}"
-        for source, target in sorted(bible.terminology.items())
-    )
+    lines.extend(f"Term: {source} => {target}" for source, target in sorted(bible.terminology.items()))
     lines.extend(f"Honorific rule: {item}" for item in bible.honorific_rules)
-    lines.extend(
-        f"Naming convention: {item}" for item in bible.naming_conventions
-    )
+    lines.extend(f"Naming convention: {item}" for item in bible.naming_conventions)
     lines.extend(f"Style: {item}" for item in bible.style_instructions)
     return "\n".join(lines)
 
@@ -246,9 +232,7 @@ def segment_text(text: str, limit: int = DEFAULT_SEGMENT_LIMIT) -> list[str]:
         sentences = re.split(r"(?<=[。！？.!?])", paragraph)
         for sentence in sentences:
             if len(sentence) > limit:
-                raise ValidationError(
-                    "A sentence exceeds the configured segment limit."
-                )
+                raise ValidationError("A sentence exceeds the configured segment limit.")
             if current and len(current) + len(sentence) > limit:
                 segments.append(current)
                 current = sentence
@@ -257,10 +241,37 @@ def segment_text(text: str, limit: int = DEFAULT_SEGMENT_LIMIT) -> list[str]:
     if current:
         segments.append(current)
     if "".join(segments) != text:
-        raise IntegrityError(
-            "Segmentation must reconstruct the normalized source exactly."
-        )
+        raise IntegrityError("Segmentation must reconstruct the normalized source exactly.")
     return segments
+
+
+def render_translation_prompt(
+    context: str,
+    continuity_context: str,
+    segment_index: int,
+    source_segment: str,
+    template: str = PROMPT_TEMPLATE,
+) -> str:
+    """Render the exact UTF-8 text passed to the translation gateway."""
+    return template.format(
+        context=context,
+        continuity_context=continuity_context,
+        segment_index=segment_index,
+        source_segment=source_segment,
+    )
+
+
+def prompt_manifest_hash(
+    manifest: list[SegmentPromptManifest] | list[dict[str, object]],
+) -> str:
+    """Hash the ordered rendered-prompt hashes for a run."""
+    rendered_hashes = [
+        item.rendered_prompt_hash
+        if isinstance(item, SegmentPromptManifest)
+        else cast(str, item["rendered_prompt_hash"])
+        for item in manifest
+    ]
+    return sha256_text(json.dumps(rendered_hashes, separators=(",", ":")))
 
 
 class Workspace:
@@ -272,20 +283,13 @@ class Workspace:
 
     def _safe(self, relative: Path) -> Path:
         target = (self.root / relative).resolve()
-        if (
-            os.path.commonpath([self.root, target]) != str(self.root)
-            or target.is_symlink()
-        ):
-            raise ValidationError(
-                "Path escapes the workspace or is a symlink."
-            )
+        if os.path.commonpath([self.root, target]) != str(self.root) or target.is_symlink():
+            raise ValidationError("Path escapes the workspace or is a symlink.")
         return target
 
     def _atomic_write(self, path: Path, content: str) -> None:
         if path.exists():
-            raise IntegrityError(
-                f"Immutable artifact already exists: {path.name}"
-            )
+            raise IntegrityError(f"Immutable artifact already exists: {path.name}")
         self._atomic_replace(path, content)
 
     def _atomic_replace(self, path: Path, content: str) -> None:
@@ -293,9 +297,7 @@ class Workspace:
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary: Path | None = None
         try:
-            with tempfile.NamedTemporaryFile(
-                "w", encoding="utf-8", dir=path.parent, delete=False
-            ) as handle:
+            with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as handle:
                 temporary = Path(handle.name)
                 handle.write(content)
                 handle.flush()
@@ -318,9 +320,7 @@ class Workspace:
             raise IntegrityError("Run identifier collision.")
         run_dir.mkdir(parents=True)
         self._atomic_write(run_dir / "source.txt", source.content)
-        self._atomic_write(
-            run_dir / "bible.json", bible.model_dump_json(indent=2)
-        )
+        self._atomic_write(run_dir / "bible.json", bible.model_dump_json(indent=2))
         self._atomic_write(run_dir / "run.json", json_dumps(asdict(record)))
         return run_dir
 
@@ -333,9 +333,7 @@ class Workspace:
         self._atomic_write(run_dir / "draft.sha256", draft_hash)
         current = self._safe(Path("current") / f"{run_id}.json")
         current.parent.mkdir(parents=True, exist_ok=True)
-        self._atomic_replace(
-            current, json_dumps({"run_id": run_id, "draft_hash": draft_hash})
-        )
+        self._atomic_replace(current, json_dumps({"run_id": run_id, "draft_hash": draft_hash}))
         return draft_hash
 
     def transition_run(
@@ -349,17 +347,39 @@ class Workspace:
         if status not in TERMINAL_RUN_STATUSES:
             raise IntegrityError(f"Invalid terminal run status: {status}.")
         path = self._safe(Path("runs") / run_id / "run.json")
-        payload = cast(
-            dict[str, object], json.loads(path.read_text(encoding="utf-8"))
-        )
+        payload = cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
         if payload.get("status") != RunStatus.STARTED:
-            raise IntegrityError(
-                "Only a started run can transition to a terminal status."
-            )
+            raise IntegrityError("Only a started run can transition to a terminal status.")
         payload.update(updates or {})
-        payload.update(
-            {"status": status, "completed_at": completed_at.isoformat()}
-        )
+        payload.update({"status": status, "completed_at": completed_at.isoformat()})
+        self._atomic_replace(path, json_dumps(payload))
+
+    def record_prompt_segment(self, run_id: str, segment: SegmentPromptManifest) -> None:
+        """Append ordered hash provenance before a segment reaches the gateway."""
+        path = self._safe(Path("runs") / run_id / "run.json")
+        payload = cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
+        manifest = cast(list[dict[str, object]], payload["segment_manifest"])
+        expected_index = len(manifest) + 1
+        if segment.segment_index != expected_index:
+            raise IntegrityError("Prompt segments must be recorded in order.")
+        manifest.append(cast(dict[str, object], asdict(segment)))
+        payload["prompt_hash"] = prompt_manifest_hash(manifest)
+        self._atomic_replace(path, json_dumps(payload))
+
+    def record_prompt_call(self, run_id: str, segment_index: int, call: PromptCall) -> None:
+        """Associate one gateway attempt with its exact rendered prompt hash."""
+        path = self._safe(Path("runs") / run_id / "run.json")
+        payload = cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
+        manifest = cast(list[dict[str, object]], payload["segment_manifest"])
+        if segment_index < 1 or segment_index > len(manifest):
+            raise IntegrityError("Gateway call references an unknown segment.")
+        segment = manifest[segment_index - 1]
+        if call.rendered_prompt_hash != segment["rendered_prompt_hash"]:
+            raise IntegrityError("Gateway call prompt hash does not match segment.")
+        calls = cast(list[dict[str, object]], segment["gateway_calls"])
+        if call.attempt != len(calls) + 1:
+            raise IntegrityError("Gateway attempts must be recorded in order.")
+        calls.append(cast(dict[str, object], asdict(call)))
         self._atomic_replace(path, json_dumps(payload))
 
     def terminate_run(
@@ -374,9 +394,7 @@ class Workspace:
     ) -> None:
         """Record bounded failure metadata without persisting exception messages."""
         if status not in {RunStatus.FAILED, RunStatus.INTERRUPTED}:
-            raise IntegrityError(
-                "A terminated run must be failed or interrupted."
-            )
+            raise IntegrityError("A terminated run must be failed or interrupted.")
         failure: dict[str, object] = {
             "type": type(error).__name__[:100],
             "phase": phase,
@@ -399,9 +417,7 @@ class Workspace:
     ) -> None:
         """Record final audit metrics after an immutable draft has been persisted."""
         path = self._safe(Path("runs") / run_id / "run.json")
-        payload = cast(
-            dict[str, object], json.loads(path.read_text(encoding="utf-8"))
-        )
+        payload = cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
         self.transition_run(
             run_id,
             RunStatus.DRAFT_COMPLETED,
@@ -413,30 +429,22 @@ class Workspace:
                     "draft": len(draft),
                 },
                 "token_estimates": {
-                    "source": estimate_tokens(
-                        source.content, bible.source_language
-                    ),
+                    "source": estimate_tokens(source.content, bible.source_language),
                     "draft": estimate_tokens(draft, bible.target_language),
                     "method": "characters_per_token: ja=1, other_languages=4",
                 },
-                "draft_title": extract_draft_title(
-                    draft, cast(dict[str, int], payload["identity"])["chapter"]
-                ),
+                "draft_title": extract_draft_title(draft, cast(dict[str, int], payload["identity"])["chapter"]),
             },
         )
 
     def draft(self, run_id: str) -> str:
         """Read the current immutable draft."""
-        return self._safe(Path("runs") / run_id / "draft.md").read_text(
-            encoding="utf-8"
-        )
+        return self._safe(Path("runs") / run_id / "draft.md").read_text(encoding="utf-8")
 
     def draft_title(self, run_id: str) -> str | None:
         """Read the stored title or infer one for a legacy raw draft."""
         path = self._safe(Path("runs") / run_id / "run.json")
-        payload = cast(
-            dict[str, object], json.loads(path.read_text(encoding="utf-8"))
-        )
+        payload = cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
         title = payload.get("draft_title")
         if isinstance(title, str) and title.strip():
             return title
@@ -449,16 +457,12 @@ class Workspace:
     def volume(self, run_id: str) -> int | None:
         """Read the optional positive volume persisted with a run."""
         path = self._safe(Path("runs") / run_id / "run.json")
-        payload = cast(
-            dict[str, object], json.loads(path.read_text(encoding="utf-8"))
-        )
+        payload = cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
         value = payload.get("volume")
         if value is None:
             return None
         if type(value) is not int or value < 1:
-            raise IntegrityError(
-                "Run volume must be a positive integer when present."
-            )
+            raise IntegrityError("Run volume must be a positive integer when present.")
         return value
 
     def append_approval(self, event: ApprovalEvent) -> None:
@@ -466,10 +470,7 @@ class Workspace:
         path = self._safe(Path("editorial") / "approvals.jsonl")
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as handle:
-            handle.write(
-                json.dumps(asdict(event), ensure_ascii=False, sort_keys=True)
-                + "\n"
-            )
+            handle.write(json.dumps(asdict(event), ensure_ascii=False, sort_keys=True) + "\n")
 
     def is_approved(self, run_id: str, draft_hash: str) -> bool:
         """Return the latest matching approval decision for a run and hash."""
@@ -478,10 +479,7 @@ class Workspace:
         if path.exists():
             for line in path.read_text(encoding="utf-8").splitlines():
                 event = json.loads(line)
-                if (
-                    event["run_id"] == run_id
-                    and event["draft_hash"] == draft_hash
-                ):
+                if event["run_id"] == run_id and event["draft_hash"] == draft_hash:
                     latest = event
         return bool(latest and latest["approved"])
 
@@ -489,9 +487,7 @@ class Workspace:
 class TranslationService:
     """Coordinates validated translation without coupling to a provider."""
 
-    def __init__(
-        self, workspace: Workspace, gateway: TranslatorGateway
-    ) -> None:
+    def __init__(self, workspace: Workspace, gateway: TranslatorGateway) -> None:
         self._workspace = workspace
         self._gateway = gateway
 
@@ -504,8 +500,7 @@ class TranslationService:
         model: str,
         volume: int | None = None,
         progress: Callable[[int, int, int], None] | None = None,
-        retry_notice: Callable[[int, int, int, httpx.TransportError], None]
-        | None = None,
+        retry_notice: Callable[[int, int, int, httpx.TransportError], None] | None = None,
         segment_limit: int = DEFAULT_SEGMENT_LIMIT,
     ) -> str:
         """Create a run, translate each segment and persist a complete draft."""
@@ -513,19 +508,24 @@ class TranslationService:
         run_id = uuid.uuid4().hex
         started_at = datetime.now(UTC)
         record = RunRecord(
-            run_id,
-            identity,
-            sha256_text(source.content),
-            provider,
-            model,
-            "v1",
-            sha256_text(context),
-            sha256_text(bible.model_dump_json()),
-            started_at,
-            RunStatus.STARTED,
-            bible.version,
-            volume,
-            source.extracted_title,
+            run_id=run_id,
+            identity=identity,
+            source_hash=sha256_text(source.content),
+            provider=provider,
+            model=model,
+            schema_version=RUN_SCHEMA_VERSION,
+            prompt_version=PROMPT_TEMPLATE_VERSION,
+            prompt_hash=prompt_manifest_hash([]),
+            prompt_template_version=PROMPT_TEMPLATE_VERSION,
+            prompt_template_hash=sha256_text(PROMPT_TEMPLATE),
+            context_hash=sha256_text(context),
+            segment_manifest=[],
+            bible_hash=sha256_text(bible.model_dump_json()),
+            timestamp=started_at,
+            status=RunStatus.STARTED,
+            bible_version=bible.version,
+            volume=volume,
+            source_title=source.extracted_title,
         )
         self._workspace.create_run(record, source, bible)
         phase = RunPhase.TRANSLATION
@@ -543,12 +543,28 @@ class TranslationService:
                         "\n\nPrevious translated passage for continuity only; do not repeat it:\n"
                         f"{previous_translation[-PREVIOUS_TRANSLATION_CONTEXT_CHARS:]}"
                     )
-                prompt = f"{context}{continuity_context}\n\nSegment {index}:\n{segment}\n\nReturn only English translation."
+                prompt = render_translation_prompt(context, continuity_context, index, segment)
+                rendered_prompt_hash = sha256_text(prompt)
+                self._workspace.record_prompt_segment(
+                    run_id,
+                    SegmentPromptManifest(
+                        segment_index=index,
+                        source_segment_hash=sha256_text(segment),
+                        continuity_context_hash=sha256_text(continuity_context),
+                        rendered_prompt_hash=rendered_prompt_hash,
+                        gateway_calls=[],
+                    ),
+                )
                 for attempt in range(1, 4):
                     current_attempt = attempt
                     if progress is not None:
                         progress(index, len(segments), attempt)
                     try:
+                        self._workspace.record_prompt_call(
+                            run_id,
+                            index,
+                            PromptCall(attempt, rendered_prompt_hash),
+                        )
                         translation = self._gateway.translate(prompt)
                         translations.append(translation)
                         previous_translation = translation
@@ -557,9 +573,7 @@ class TranslationService:
                         if retry_notice is not None:
                             retry_notice(index, len(segments), attempt, error)
                 else:
-                    raise ValidationError(
-                        "Translation failed after three attempts."
-                    )
+                    raise ValidationError("Translation failed after three attempts.")
             draft = "".join(translations)
             phase = RunPhase.DRAFT_PERSISTENCE
             current_segment = None
@@ -618,19 +632,13 @@ class TranslationService:
                 datetime.now(UTC),
             )
         except Exception as lifecycle_error:
-            error.add_note(
-                f"Could not persist terminal run state: {type(lifecycle_error).__name__}"
-            )
+            error.add_note(f"Could not persist terminal run state: {type(lifecycle_error).__name__}")
 
 
-def approve(
-    workspace: Workspace, run_id: str, approved: bool = True
-) -> ApprovalEvent:
+def approve(workspace: Workspace, run_id: str, approved: bool = True) -> ApprovalEvent:
     """Append the current approval decision for a complete draft."""
     draft = workspace.draft(run_id)
-    event = ApprovalEvent(
-        run_id, sha256_text(draft), approved, datetime.now(UTC).isoformat()
-    )
+    event = ApprovalEvent(run_id, sha256_text(draft), approved, datetime.now(UTC).isoformat())
     workspace.append_approval(event)
     return event
 
@@ -650,20 +658,14 @@ def export_draft(
         raise ApprovalRequired("The current draft hash has not been approved.")
     title = title or workspace.draft_title(run_id)
     if title is None:
-        raise ValidationError(
-            "No draft title found; pass --title to export this run."
-        )
+        raise ValidationError("No draft title found; pass --title to export this run.")
     if publish_date is None:
         rendered_publish_date = date.today().isoformat()
     else:
         try:
-            rendered_publish_date = date.fromisoformat(
-                publish_date
-            ).isoformat()
+            rendered_publish_date = date.fromisoformat(publish_date).isoformat()
         except ValueError as error:
-            raise ValidationError(
-                "publish_date must use the YYYY-MM-DD format."
-            ) from error
+            raise ValidationError("publish_date must use the YYYY-MM-DD format.") from error
     destination = destination.resolve()
     volume = workspace.volume(run_id)
     front_matter = [
@@ -674,14 +676,8 @@ def export_draft(
     if volume is not None:
         front_matter.append(f"volume: {volume}")
     rendered = "\n".join([*front_matter, "---", "", draft, ""])
-    if (
-        destination.exists()
-        and destination.read_text(encoding="utf-8") != rendered
-        and not overwrite
-    ):
-        raise CollisionRequired(
-            "Destination differs; pass explicit overwrite confirmation."
-        )
+    if destination.exists() and destination.read_text(encoding="utf-8") != rendered and not overwrite:
+        raise CollisionRequired("Destination differs; pass explicit overwrite confirmation.")
     destination.parent.mkdir(parents=True, exist_ok=True)
     backup = destination.with_suffix(destination.suffix + ".bak")
     try:

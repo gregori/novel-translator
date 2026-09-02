@@ -43,6 +43,7 @@ class OpenAICompatibleGateway:
     ) -> None:
         self._base_url = config.base_url.rstrip("/")
         self._model = config.model
+        self._api_key = config.api_key
         self._timeout_seconds = config.timeout_seconds
         self._client = client or OpenAI(
             api_key=config.api_key,
@@ -90,8 +91,7 @@ class OpenAICompatibleGateway:
             raise ValidationError("Provider returned an empty translation.")
         return content.strip()
 
-    @staticmethod
-    def _provider_error(error: APIStatusError) -> str:
+    def _provider_error(self, error: APIStatusError) -> str:
         """Return a bounded provider error without exposing request secrets."""
         payload = error.body
         if isinstance(payload, dict):
@@ -112,6 +112,8 @@ class OpenAICompatibleGateway:
             detail = message
         else:
             detail = "No error detail returned."
+        if self._api_key:
+            detail = detail.replace(self._api_key, "***")
         suffix = (
             f" Request ID: {error.request_id}." if error.request_id else ""
         )

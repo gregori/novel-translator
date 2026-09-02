@@ -145,3 +145,26 @@ def test_gateway_reports_safe_provider_error_details() -> None:
         match="HTTP 401: Invalid API key. Request ID: request-123",
     ):
         gateway.translate("prompt")
+
+
+def test_gateway_redacts_configured_key_from_provider_error() -> None:
+    """A provider response cannot echo the configured API key to the user."""
+
+    def leaked_key_response(_: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            401, json={"error": {"message": "Rejected secret-value"}}
+        )
+
+    config = OpenCodeGoConfig(
+        "https://example.test/v1", "test-model", "secret-value"
+    )
+    gateway = OpenAICompatibleGateway(
+        config,
+        client=sdk_client(httpx2.MockTransport(leaked_key_response)),
+    )
+
+    with pytest.raises(ValidationError) as raised:
+        gateway.translate("prompt")
+
+    assert "secret-value" not in str(raised.value)
+    assert "***" in str(raised.value)

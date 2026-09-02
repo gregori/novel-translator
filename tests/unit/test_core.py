@@ -101,17 +101,13 @@ def test_translation_records_completion_metrics(tmp_path: Path) -> None:
         ChapterIdentity("novel", 1), source, bible, "test", "test-model"
     )
 
-    run = json.loads(
-        (tmp_path / "runs" / run_id / "run.json").read_text(encoding="utf-8")
-    )
+    run = json.loads((tmp_path / "runs" / run_id / "run.json").read_text(encoding="utf-8"))
     assert run["status"] == "draft_completed"
     assert run["completed_at"]
     assert run["duration_seconds"] >= 0
     assert run["character_counts"] == {"source": 3, "draft": 13}
     assert run["token_estimates"]["source"] == 3
-    assert run["token_estimates"]["draft"] == estimate_tokens(
-        "English draft", "en"
-    )
+    assert run["token_estimates"]["draft"] == estimate_tokens("English draft", "en")
 
 
 def test_translation_records_safe_terminal_gateway_failure(
@@ -122,9 +118,7 @@ def test_translation_records_safe_terminal_gateway_failure(
     gateway.translate.side_effect = httpx.ConnectError("api_key=super-secret")
     workspace = Workspace(tmp_path)
 
-    with pytest.raises(
-        ValidationError, match="failed after three attempts"
-    ) as raised:
+    with pytest.raises(ValidationError, match="failed after three attempts") as raised:
         TranslationService(workspace, gateway).translate(
             ChapterIdentity("novel", 1),
             SourceDocument("source", "test"),
@@ -229,19 +223,13 @@ def test_export_uses_an_inferred_draft_title(tmp_path: Path) -> None:
     workspace = Workspace(tmp_path)
     run_dir = tmp_path / "runs" / VALID_RUN_ID
     run_dir.mkdir(parents=True)
-    (run_dir / "draft.md").write_text(
-        "Episode 7: Rainy Day\n\nDraft", encoding="utf-8"
-    )
-    (run_dir / "run.json").write_text(
-        '{"identity": {"chapter": 7}}', encoding="utf-8"
-    )
+    (run_dir / "draft.md").write_text("Episode 7: Rainy Day\n\nDraft", encoding="utf-8")
+    (run_dir / "run.json").write_text('{"identity": {"chapter": 7}}', encoding="utf-8")
     approve(workspace, VALID_RUN_ID)
 
     exported = export_draft(workspace, VALID_RUN_ID, tmp_path / "out.md")
 
-    assert 'chapterTitle: "Episode 7: Rainy Day"' in exported.read_text(
-        encoding="utf-8"
-    )
+    assert 'chapterTitle: "Episode 7: Rainy Day"' in exported.read_text(encoding="utf-8")
 
 
 def test_translation_supplies_previous_passage_when_segmented(
@@ -265,10 +253,7 @@ def test_translation_supplies_previous_passage_when_segmented(
     )
 
     second_prompt = gateway.translate.call_args_list[1].args[0]
-    assert (
-        "Previous translated passage for continuity only; do not repeat it:"
-        in second_prompt
-    )
+    assert "Previous translated passage for continuity only; do not repeat it:" in second_prompt
     assert "First translated passage." in second_prompt
 
 
@@ -292,27 +277,19 @@ def test_translation_records_exact_ordered_prompt_provenance(
         segment_limit=7,
     )
 
-    run = json.loads(
-        (tmp_path / "runs" / run_id / "run.json").read_text(encoding="utf-8")
-    )
+    run = json.loads((tmp_path / "runs" / run_id / "run.json").read_text(encoding="utf-8"))
     manifest = run["segment_manifest"]
     prompts = [call.args[0] for call in gateway.translate.call_args_list]
     assert run["schema_version"] == 2
     assert run["prompt_template_version"] == PROMPT_TEMPLATE_VERSION
     assert run["prompt_template_hash"] == sha256_text(PROMPT_TEMPLATE)
-    assert run["context_hash"] == sha256_text(
-        build_context(TranslationBible.model_validate({"title": "Novel"}))
-    )
+    assert run["context_hash"] == sha256_text(build_context(TranslationBible.model_validate({"title": "Novel"})))
     assert [item["segment_index"] for item in manifest] == [1, 2]
-    assert [item["rendered_prompt_hash"] for item in manifest] == [
-        sha256_text(prompt) for prompt in prompts
-    ]
+    assert [item["rendered_prompt_hash"] for item in manifest] == [sha256_text(prompt) for prompt in prompts]
     assert manifest[0]["source_segment_hash"] == sha256_text("first\n")
     assert manifest[0]["continuity_context_hash"] == sha256_text("")
     assert manifest[1]["continuity_context_hash"] != sha256_text("")
-    assert manifest[0]["gateway_calls"] == [
-        {"attempt": 1, "rendered_prompt_hash": sha256_text(prompts[0])}
-    ]
+    assert manifest[0]["gateway_calls"] == [{"attempt": 1, "rendered_prompt_hash": sha256_text(prompts[0])}]
     assert run["prompt_hash"] == prompt_manifest_hash(manifest)
 
 
@@ -320,9 +297,7 @@ def test_rendered_prompt_hash_is_deterministic_and_sensitive() -> None:
     """Template, context, source, index, and continuity affect prompt hashes."""
     inputs = ("context", "continuity", 1, "source")
     baseline = render_translation_prompt(*inputs)
-    assert sha256_text(render_translation_prompt(*inputs)) == sha256_text(
-        baseline
-    )
+    assert sha256_text(render_translation_prompt(*inputs)) == sha256_text(baseline)
     variants = [
         render_translation_prompt("changed", *inputs[1:]),
         render_translation_prompt(inputs[0], "changed", *inputs[2:]),
@@ -330,9 +305,7 @@ def test_rendered_prompt_hash_is_deterministic_and_sensitive() -> None:
         render_translation_prompt(*inputs[:3], "changed"),
         render_translation_prompt(*inputs, template="changed {context}"),
     ]
-    assert all(
-        sha256_text(variant) != sha256_text(baseline) for variant in variants
-    )
+    assert all(sha256_text(variant) != sha256_text(baseline) for variant in variants)
 
 
 def test_gateway_retries_are_all_associated_with_the_prompt(
@@ -353,9 +326,7 @@ def test_gateway_retries_are_all_associated_with_the_prompt(
         "test-model",
     )
 
-    run = json.loads(
-        (tmp_path / "runs" / run_id / "run.json").read_text(encoding="utf-8")
-    )
+    run = json.loads((tmp_path / "runs" / run_id / "run.json").read_text(encoding="utf-8"))
     calls = run["segment_manifest"][0]["gateway_calls"]
     assert [call["attempt"] for call in calls] == [1, 2]
     assert len({call["rendered_prompt_hash"] for call in calls}) == 1
@@ -390,16 +361,12 @@ def test_translation_reports_transport_errors_before_retrying(
 def test_bible_rejects_alias_matching_canonical_name() -> None:
     """Bible identifiers cannot be ambiguous."""
     with pytest.raises(ValueError):
-        TranslationBible.model_validate(
-            {"title": "Novel", "characters": [{"name": "A", "aliases": ["a"]}]}
-        )
+        TranslationBible.model_validate({"title": "Novel", "characters": [{"name": "A", "aliases": ["a"]}]})
 
 
 def test_gariben_translation_bible_loads() -> None:
     """The published-chapter bible remains valid against the strict schema."""
-    bible = load_bible(
-        Path("config/gariben-kun-to-uraaka-san.translation-bible.yaml")
-    )
+    bible = load_bible(Path("config/gariben-kun-to-uraaka-san.translation-bible.yaml"))
 
     assert bible.version == "chapters-01-26"
 
@@ -465,9 +432,7 @@ def test_workspace_requires_current_approval_for_export(
     run_dir.mkdir(parents=True)
     (run_dir / "draft.md").write_text("Draft", encoding="utf-8")
     with pytest.raises(ApprovalRequired):
-        export_draft(
-            workspace, VALID_RUN_ID, tmp_path / "out.md", "Title"
-        )
+        export_draft(workspace, VALID_RUN_ID, tmp_path / "out.md", "Title")
 
 
 def test_latest_matching_approval_event_controls_eligibility(
@@ -475,15 +440,9 @@ def test_latest_matching_approval_event_controls_eligibility(
 ) -> None:
     """The latest append-only event wins for exactly one draft hash."""
     workspace = Workspace(tmp_path)
-    event = ApprovalEvent(
-        "run", sha256_text("Draft"), True, "2026-01-01T00:00:00+00:00"
-    )
+    event = ApprovalEvent("run", sha256_text("Draft"), True, "2026-01-01T00:00:00+00:00")
     workspace.append_approval(event)
-    workspace.append_approval(
-        ApprovalEvent(
-            "run", event.draft_hash, False, "2026-01-02T00:00:00+00:00"
-        )
-    )
+    workspace.append_approval(ApprovalEvent("run", event.draft_hash, False, "2026-01-02T00:00:00+00:00"))
     assert not workspace.is_approved("run", event.draft_hash)
 
 

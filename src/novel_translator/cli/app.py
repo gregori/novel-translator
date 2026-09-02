@@ -42,9 +42,7 @@ def translate(
     workspace: Path = typer.Option(Path(".novel-translator")),
     base_url: str = typer.Option(..., envvar="NOVEL_TRANSLATOR_BASE_URL"),
     model: str = typer.Option(..., envvar="NOVEL_TRANSLATOR_MODEL"),
-    api_key: str = typer.Option(
-        ..., envvar="NOVEL_TRANSLATOR_API_KEY", hide_input=True
-    ),
+    api_key: str = typer.Option(..., envvar="NOVEL_TRANSLATOR_API_KEY", hide_input=True),
     provider: str = typer.Option("opencode-go"),
     volume: int | None = typer.Option(None, min=1),
     request_timeout: float = typer.Option(90.0, min=1.0),
@@ -79,11 +77,7 @@ def translate(
         )
     except NovelTranslatorError as error:
         fail(error)
-    typer.echo(
-        json.dumps({"run_id": run_id})
-        if json_output
-        else f"Draft created: {run_id}"
-    )
+    typer.echo(json.dumps({"run_id": run_id}) if json_output else f"Draft created: {run_id}")
 
 
 @app.command()

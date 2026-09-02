@@ -42,6 +42,30 @@ O export usa o título do episódio detectado no draft. Use `--title "Título"` 
 
 Durante a tradução, a CLI informa o segmento e a tentativa em andamento. Por padrão, um capítulo de até 60.000 caracteres é enviado em uma única chamada. Capítulos maiores são divididos por parágrafos; cada segmento posterior recebe os últimos 12.000 caracteres da tradução anterior somente como contexto de continuidade. Ajuste o limite com `--segment-limit CARACTERES`. Cada chamada ao provedor tem um prazo total de 90 segundos por padrão; ajuste-o com `--request-timeout SEGUNDOS`.
 
+## Proveniência dos prompts
+
+Runs novos usam `schema_version: 2`. Runs antigos, sem esse campo, continuam
+legíveis e preservam o significado legado de `prompt_hash`.
+
+No schema v2, os hashes SHA-256 usam os bytes UTF-8 exatos:
+
+- `source_hash`: source normalizado completo salvo em `source.txt`;
+- `bible_hash`: JSON emitido pelo Pydantic para a translation bible validada;
+- `prompt_template_hash`: template estático identificado por `prompt_template_version`;
+- `context_hash`: contexto renderizado da translation bible;
+- `source_segment_hash`: source exato do segmento;
+- `continuity_context_hash`: bloco de continuidade exato, incluindo a instrução;
+- `rendered_prompt_hash`: prompt completo enviado ao gateway;
+- `prompt_hash`: digest da lista JSON compacta e ordenada de `rendered_prompt_hash`.
+
+`prompt_version` é mantido como alias de compatibilidade de
+`prompt_template_version`. No primeiro segmento, o contexto de continuidade é a
+string vazia.
+
+`segment_manifest` preserva a ordem e `gateway_calls` registra cada tentativa com
+seu `rendered_prompt_hash`. O `run.json` armazena apenas hashes e metadados nesse
+manifesto, sem duplicar conteúdo sensível.
+
 ## Desenvolvimento
 
 ```powershell

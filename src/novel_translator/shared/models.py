@@ -39,6 +39,25 @@ class ChapterIdentity:
 
 
 @dataclass(frozen=True, slots=True)
+class PromptCall:
+    """One gateway call associated with an exact rendered prompt hash."""
+
+    attempt: int
+    rendered_prompt_hash: str
+
+
+@dataclass(frozen=True, slots=True)
+class SegmentPromptManifest:
+    """Hash-only provenance for one source segment, without sensitive text."""
+
+    segment_index: int
+    source_segment_hash: str
+    continuity_context_hash: str
+    rendered_prompt_hash: str
+    gateway_calls: list[PromptCall]
+
+
+@dataclass(frozen=True, slots=True)
 class RunRecord:
     """Serializable audit record for one immutable translation run."""
 
@@ -47,8 +66,13 @@ class RunRecord:
     source_hash: str
     provider: str
     model: str
+    schema_version: int
     prompt_version: str
     prompt_hash: str
+    prompt_template_version: str
+    prompt_template_hash: str
+    context_hash: str
+    segment_manifest: list[SegmentPromptManifest]
     bible_hash: str
     timestamp: datetime
     status: RunStatus

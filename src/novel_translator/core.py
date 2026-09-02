@@ -41,6 +41,7 @@ from novel_translator.shared.utils import json_dumps, sha256_text
 DEFAULT_SEGMENT_LIMIT = 60_000
 PREVIOUS_TRANSLATION_CONTEXT_CHARS = 12_000
 RUN_SCHEMA_VERSION = 2
+RUN_ID_PATTERN = re.compile(r"[0-9a-f]{32}")
 PROMPT_TEMPLATE_VERSION = "v1"
 PROMPT_TEMPLATE = (
     "{context}{continuity_context}\n\nSegment {segment_index}:\n{source_segment}\n\nReturn only English translation."
@@ -282,10 +283,22 @@ class Workspace:
         self.root.mkdir(parents=True, exist_ok=True)
 
     def _safe(self, relative: Path) -> Path:
-        target = (self.root / relative).resolve()
-        if os.path.commonpath([self.root, target]) != str(self.root) or target.is_symlink():
+        unresolved = self.root / relative
+        current = self.root
+        for part in relative.parts:
+            current /= part
+            if current.is_symlink():
+                raise ValidationError("Path escapes the workspace or is a symlink.")
+        target = unresolved.resolve()
+        if os.path.commonpath([self.root, target]) != str(self.root):
             raise ValidationError("Path escapes the workspace or is a symlink.")
         return target
+
+    def _run_path(self, run_id: str, *parts: str) -> Path:
+        """Return a safe path below a validated application-generated run ID."""
+        if RUN_ID_PATTERN.fullmatch(run_id) is None:
+            raise ValidationError("Run ID must be 32 lowercase hexadecimal characters.")
+        return self._safe(Path("runs") / run_id / Path(*parts))
 
     def _atomic_write(self, path: Path, content: str) -> None:
         if path.exists():
@@ -315,7 +328,7 @@ class Workspace:
         bible: TranslationBible,
     ) -> Path:
         """Create immutable source, bible snapshot and run metadata."""
-        run_dir = self._safe(Path("runs") / record.run_id)
+        run_dir = self._run_path(record.run_id)
         if run_dir.exists():
             raise IntegrityError("Run identifier collision.")
         run_dir.mkdir(parents=True)
@@ -326,7 +339,7 @@ class Workspace:
 
     def save_draft(self, run_id: str, draft: str) -> str:
         """Persist a complete draft and atomically update its current projection."""
-        run_dir = self._safe(Path("runs") / run_id)
+        run_dir = self._run_path(run_id)
         draft_path = run_dir / "draft.md"
         self._atomic_write(draft_path, draft)
         draft_hash = sha256_text(draft)
@@ -346,7 +359,7 @@ class Workspace:
         """Atomically apply one valid terminal transition to a started run."""
         if status not in TERMINAL_RUN_STATUSES:
             raise IntegrityError(f"Invalid terminal run status: {status}.")
-        path = self._safe(Path("runs") / run_id / "run.json")
+        path = self._run_path(run_id, "run.json")
         payload = cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
         if payload.get("status") != RunStatus.STARTED:
             raise IntegrityError("Only a started run can transition to a terminal status.")
@@ -356,7 +369,7 @@ class Workspace:
 
     def record_prompt_segment(self, run_id: str, segment: SegmentPromptManifest) -> None:
         """Append ordered hash provenance before a segment reaches the gateway."""
-        path = self._safe(Path("runs") / run_id / "run.json")
+        path = self._run_path(run_id, "run.json")
         payload = cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
         manifest = cast(list[dict[str, object]], payload["segment_manifest"])
         expected_index = len(manifest) + 1
@@ -368,7 +381,7 @@ class Workspace:
 
     def record_prompt_call(self, run_id: str, segment_index: int, call: PromptCall) -> None:
         """Associate one gateway attempt with its exact rendered prompt hash."""
-        path = self._safe(Path("runs") / run_id / "run.json")
+        path = self._run_path(run_id, "run.json")
         payload = cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
         manifest = cast(list[dict[str, object]], payload["segment_manifest"])
         if segment_index < 1 or segment_index > len(manifest):
@@ -416,7 +429,7 @@ class Workspace:
         bible: TranslationBible,
     ) -> None:
         """Record final audit metrics after an immutable draft has been persisted."""
-        path = self._safe(Path("runs") / run_id / "run.json")
+        path = self._run_path(run_id, "run.json")
         payload = cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
         self.transition_run(
             run_id,
@@ -439,11 +452,11 @@ class Workspace:
 
     def draft(self, run_id: str) -> str:
         """Read the current immutable draft."""
-        return self._safe(Path("runs") / run_id / "draft.md").read_text(encoding="utf-8")
+        return self._run_path(run_id, "draft.md").read_text(encoding="utf-8")
 
     def draft_title(self, run_id: str) -> str | None:
         """Read the stored title or infer one for a legacy raw draft."""
-        path = self._safe(Path("runs") / run_id / "run.json")
+        path = self._run_path(run_id, "run.json")
         payload = cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
         title = payload.get("draft_title")
         if isinstance(title, str) and title.strip():
@@ -456,7 +469,7 @@ class Workspace:
 
     def volume(self, run_id: str) -> int | None:
         """Read the optional positive volume persisted with a run."""
-        path = self._safe(Path("runs") / run_id / "run.json")
+        path = self._run_path(run_id, "run.json")
         payload = cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
         value = payload.get("volume")
         if value is None:
@@ -464,6 +477,38 @@ class Workspace:
         if type(value) is not int or value < 1:
             raise IntegrityError("Run volume must be a positive integer when present.")
         return value
+
+    def inspect_run(
+        self, run_id: str, include_draft: bool = False
+    ) -> dict[str, object]:
+        """Read validated run metadata and optionally its draft."""
+        try:
+            serialized = self._run_path(run_id, "run.json").read_text(
+                encoding="utf-8"
+            )
+        except FileNotFoundError as error:
+            raise ValidationError("Run metadata was not found.") from error
+        except (OSError, UnicodeError) as error:
+            raise ValidationError("Run metadata could not be read.") from error
+        try:
+            loaded: object = json.loads(serialized)
+        except json.JSONDecodeError as error:
+            raise IntegrityError("Run metadata contains invalid JSON.") from error
+        if not isinstance(loaded, dict):
+            raise IntegrityError("Run metadata must be a JSON object.")
+        data = cast(dict[str, object], loaded)
+        if data.get("run_id") != run_id:
+            raise IntegrityError("Run metadata does not match the requested run ID.")
+        if include_draft:
+            try:
+                data["draft"] = self._run_path(run_id, "draft.md").read_text(
+                    encoding="utf-8"
+                )
+            except FileNotFoundError as error:
+                raise ValidationError("Run draft was not found.") from error
+            except (OSError, UnicodeError) as error:
+                raise ValidationError("Run draft could not be read.") from error
+        return data
 
     def append_approval(self, event: ApprovalEvent) -> None:
         """Append an approval event without modifying prior events."""

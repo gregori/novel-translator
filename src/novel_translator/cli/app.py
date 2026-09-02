@@ -14,9 +14,7 @@ from novel_translator.core import (
     load_bible,
     read_source,
 )
-from novel_translator.core import (
-    approve as approve_draft,
-)
+from novel_translator.core import approve as approve_draft
 from novel_translator.providers import OpenCodeGoConfig, resolve_provider
 from novel_translator.shared.errors import NovelTranslatorError
 from novel_translator.shared.models import ChapterIdentity
@@ -44,7 +42,9 @@ def translate(
     workspace: Path = typer.Option(Path(".novel-translator")),
     base_url: str = typer.Option(..., envvar="NOVEL_TRANSLATOR_BASE_URL"),
     model: str = typer.Option(..., envvar="NOVEL_TRANSLATOR_MODEL"),
-    api_key: str = typer.Option(..., envvar="NOVEL_TRANSLATOR_API_KEY", hide_input=True),
+    api_key: str = typer.Option(
+        ..., envvar="NOVEL_TRANSLATOR_API_KEY", hide_input=True
+    ),
     provider: str = typer.Option("opencode-go"),
     volume: int | None = typer.Option(None, min=1),
     request_timeout: float = typer.Option(90.0, min=1.0),
@@ -68,18 +68,22 @@ def translate(
             selection.model,
             volume,
             lambda index, total, attempt: typer.echo(
-                f"Translating segment {index}/{total} (attempt {attempt}/3)...", err=True
+                f"Translating segment {index}/{total} (attempt {attempt}/3)...",
+                err=True,
             ),
             lambda index, total, attempt, error: typer.echo(
-                f"Request failed for segment {index}/{total} (attempt {attempt}/3): "
-                f"{type(error).__name__}: {error}",
+                f"Request failed for segment {index}/{total} (attempt {attempt}/3): {type(error).__name__}",
                 err=True,
             ),
             segment_limit,
         )
     except NovelTranslatorError as error:
         fail(error)
-    typer.echo(json.dumps({"run_id": run_id}) if json_output else f"Draft created: {run_id}")
+    typer.echo(
+        json.dumps({"run_id": run_id})
+        if json_output
+        else f"Draft created: {run_id}"
+    )
 
 
 @app.command()

@@ -1,6 +1,7 @@
 """Unit and property tests for the pure workflow rules."""
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -23,8 +24,12 @@ from novel_translator.core import (
     load_bible,
     segment_text,
 )
-from novel_translator.shared.errors import ApprovalRequired, ValidationError
-from novel_translator.shared.models import ChapterIdentity
+from novel_translator.shared.errors import (
+    ApprovalRequired,
+    IntegrityError,
+    ValidationError,
+)
+from novel_translator.shared.models import ChapterIdentity, RunStatus
 from novel_translator.shared.utils import json_dumps, sha256_text
 
 
@@ -59,7 +64,9 @@ def test_translation_reports_progress_for_each_segment(tmp_path: Path) -> None:
     progress.assert_called_once_with(1, 1, 1)
 
 
-def test_translation_sends_a_short_chapter_in_one_request(tmp_path: Path) -> None:
+def test_translation_sends_a_short_chapter_in_one_request(
+    tmp_path: Path,
+) -> None:
     """The default limit preserves full-chapter context for ordinary chapters."""
     gateway = Mock()
     gateway.translate.return_value = "translated"
@@ -88,13 +95,120 @@ def test_translation_records_completion_metrics(tmp_path: Path) -> None:
         ChapterIdentity("novel", 1), source, bible, "test", "test-model"
     )
 
-    run = json.loads((tmp_path / "runs" / run_id / "run.json").read_text(encoding="utf-8"))
+    run = json.loads(
+        (tmp_path / "runs" / run_id / "run.json").read_text(encoding="utf-8")
+    )
     assert run["status"] == "draft_completed"
     assert run["completed_at"]
     assert run["duration_seconds"] >= 0
     assert run["character_counts"] == {"source": 3, "draft": 13}
     assert run["token_estimates"]["source"] == 3
-    assert run["token_estimates"]["draft"] == estimate_tokens("English draft", "en")
+    assert run["token_estimates"]["draft"] == estimate_tokens(
+        "English draft", "en"
+    )
+
+
+def test_translation_records_safe_terminal_gateway_failure(
+    tmp_path: Path,
+) -> None:
+    """A definitive gateway failure terminates the run without leaking its message."""
+    gateway = Mock()
+    gateway.translate.side_effect = httpx.ConnectError("api_key=super-secret")
+    workspace = Workspace(tmp_path)
+
+    with pytest.raises(
+        ValidationError, match="failed after three attempts"
+    ) as raised:
+        TranslationService(workspace, gateway).translate(
+            ChapterIdentity("novel", 1),
+            SourceDocument("source", "test"),
+            TranslationBible.model_validate({"title": "Novel"}),
+            "test",
+            "test-model",
+        )
+
+    run_path = next((tmp_path / "runs").glob("*/run.json"))
+    serialized = run_path.read_text(encoding="utf-8")
+    run = json.loads(serialized)
+    assert run["status"] == "failed"
+    assert run["completed_at"]
+    assert run["error"] == {
+        "attempt": 3,
+        "phase": "translation",
+        "segment": 1,
+        "timestamp": run["completed_at"],
+        "type": "ValidationError",
+    }
+    assert "super-secret" not in serialized
+    assert "super-secret" not in str(raised.value)
+
+
+def test_translation_records_user_interruption(tmp_path: Path) -> None:
+    """A keyboard interruption terminates the run as interrupted."""
+    gateway = Mock()
+    gateway.translate.side_effect = KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        TranslationService(Workspace(tmp_path), gateway).translate(
+            ChapterIdentity("novel", 1),
+            SourceDocument("source", "test"),
+            TranslationBible.model_validate({"title": "Novel"}),
+            "test",
+            "test-model",
+        )
+
+    run_path = next((tmp_path / "runs").glob("*/run.json"))
+    run = json.loads(run_path.read_text(encoding="utf-8"))
+    assert run["status"] == "interrupted"
+    assert run["error"]["type"] == "KeyboardInterrupt"
+    assert run["error"]["phase"] == "translation"
+
+
+def test_translation_records_failure_during_draft_persistence(
+    tmp_path: Path,
+) -> None:
+    """A draft write failure leaves an auditable failed run."""
+    workspace = Workspace(tmp_path)
+    workspace.save_draft = Mock(side_effect=OSError("api_key=super-secret"))  # type: ignore[method-assign]
+    gateway = Mock()
+    gateway.translate.return_value = "translated"
+
+    with pytest.raises(OSError, match="super-secret"):
+        TranslationService(workspace, gateway).translate(
+            ChapterIdentity("novel", 1),
+            SourceDocument("source", "test"),
+            TranslationBible.model_validate({"title": "Novel"}),
+            "test",
+            "test-model",
+        )
+
+    run_path = next((tmp_path / "runs").glob("*/run.json"))
+    serialized = run_path.read_text(encoding="utf-8")
+    run = json.loads(serialized)
+    assert run["status"] == "failed"
+    assert run["error"]["phase"] == "draft_persistence"
+    assert "segment" not in run["error"]
+    assert "attempt" not in run["error"]
+    assert "super-secret" not in serialized
+
+
+def test_workspace_rejects_a_second_terminal_transition(
+    tmp_path: Path,
+) -> None:
+    """Central lifecycle rules prevent a terminal run from changing again."""
+    gateway = Mock()
+    gateway.translate.return_value = "translated"
+    workspace = Workspace(tmp_path)
+    run_id = TranslationService(workspace, gateway).translate(
+        ChapterIdentity("novel", 1),
+        SourceDocument("source", "test"),
+        TranslationBible.model_validate({"title": "Novel"}),
+        "test",
+        "test-model",
+    )
+
+    with pytest.raises(IntegrityError, match="Only a started run"):
+        workspace.transition_run(run_id, RunStatus.FAILED, datetime.now(UTC))
 
 
 def test_extract_draft_title_ignores_unmatched_heading() -> None:
@@ -109,19 +223,30 @@ def test_export_uses_an_inferred_draft_title(tmp_path: Path) -> None:
     workspace = Workspace(tmp_path)
     run_dir = tmp_path / "runs" / "run"
     run_dir.mkdir(parents=True)
-    (run_dir / "draft.md").write_text("Episode 7: Rainy Day\n\nDraft", encoding="utf-8")
-    (run_dir / "run.json").write_text('{"identity": {"chapter": 7}}', encoding="utf-8")
+    (run_dir / "draft.md").write_text(
+        "Episode 7: Rainy Day\n\nDraft", encoding="utf-8"
+    )
+    (run_dir / "run.json").write_text(
+        '{"identity": {"chapter": 7}}', encoding="utf-8"
+    )
     approve(workspace, "run")
 
     exported = export_draft(workspace, "run", tmp_path / "out.md")
 
-    assert 'chapterTitle: "Episode 7: Rainy Day"' in exported.read_text(encoding="utf-8")
+    assert 'chapterTitle: "Episode 7: Rainy Day"' in exported.read_text(
+        encoding="utf-8"
+    )
 
 
-def test_translation_supplies_previous_passage_when_segmented(tmp_path: Path) -> None:
+def test_translation_supplies_previous_passage_when_segmented(
+    tmp_path: Path,
+) -> None:
     """Later segments receive translated continuity context without repeating it."""
     gateway = Mock()
-    gateway.translate.side_effect = ["First translated passage.", "Second translated passage."]
+    gateway.translate.side_effect = [
+        "First translated passage.",
+        "Second translated passage.",
+    ]
     service = TranslationService(Workspace(tmp_path), gateway)
 
     service.translate(
@@ -134,14 +259,22 @@ def test_translation_supplies_previous_passage_when_segmented(tmp_path: Path) ->
     )
 
     second_prompt = gateway.translate.call_args_list[1].args[0]
-    assert "Previous translated passage for continuity only; do not repeat it:" in second_prompt
+    assert (
+        "Previous translated passage for continuity only; do not repeat it:"
+        in second_prompt
+    )
     assert "First translated passage." in second_prompt
 
 
-def test_translation_reports_transport_errors_before_retrying(tmp_path: Path) -> None:
+def test_translation_reports_transport_errors_before_retrying(
+    tmp_path: Path,
+) -> None:
     """Transport failures are exposed before the next attempt begins."""
     gateway = Mock()
-    gateway.translate.side_effect = [httpx.ConnectError("offline"), "translated"]
+    gateway.translate.side_effect = [
+        httpx.ConnectError("offline"),
+        "translated",
+    ]
     retry_notice = Mock()
     service = TranslationService(Workspace(tmp_path), gateway)
 
@@ -162,12 +295,16 @@ def test_translation_reports_transport_errors_before_retrying(tmp_path: Path) ->
 def test_bible_rejects_alias_matching_canonical_name() -> None:
     """Bible identifiers cannot be ambiguous."""
     with pytest.raises(ValueError):
-        TranslationBible.model_validate({"title": "Novel", "characters": [{"name": "A", "aliases": ["a"]}]})
+        TranslationBible.model_validate(
+            {"title": "Novel", "characters": [{"name": "A", "aliases": ["a"]}]}
+        )
 
 
 def test_gariben_translation_bible_loads() -> None:
     """The published-chapter bible remains valid against the strict schema."""
-    bible = load_bible(Path("config/gariben-kun-to-uraaka-san.translation-bible.yaml"))
+    bible = load_bible(
+        Path("config/gariben-kun-to-uraaka-san.translation-bible.yaml")
+    )
 
     assert bible.version == "chapters-01-26"
 
@@ -198,7 +335,9 @@ def test_context_is_deterministic() -> None:
     assert build_context(first) == build_context(second)
 
 
-def test_example_bible_fields_are_rendered_in_translation_prompt(tmp_path: Path) -> None:
+def test_example_bible_fields_are_rendered_in_translation_prompt(
+    tmp_path: Path,
+) -> None:
     """Every functional field in the example bible reaches the provider prompt."""
     bible = load_bible(Path("config/translation-bible.example.yaml"))
     gateway = Mock()
@@ -222,7 +361,9 @@ def test_example_bible_fields_are_rendered_in_translation_prompt(tmp_path: Path)
     assert "Style: Use natural English prose." in prompt
 
 
-def test_workspace_requires_current_approval_for_export(tmp_path: Path) -> None:
+def test_workspace_requires_current_approval_for_export(
+    tmp_path: Path,
+) -> None:
     """Export does not occur before an exact hash approval."""
     workspace = Workspace(tmp_path)
     run_dir = tmp_path / "runs" / "run"
@@ -232,12 +373,20 @@ def test_workspace_requires_current_approval_for_export(tmp_path: Path) -> None:
         export_draft(workspace, "run", tmp_path / "out.md", "Title")
 
 
-def test_latest_matching_approval_event_controls_eligibility(tmp_path: Path) -> None:
+def test_latest_matching_approval_event_controls_eligibility(
+    tmp_path: Path,
+) -> None:
     """The latest append-only event wins for exactly one draft hash."""
     workspace = Workspace(tmp_path)
-    event = ApprovalEvent("run", sha256_text("Draft"), True, "2026-01-01T00:00:00+00:00")
+    event = ApprovalEvent(
+        "run", sha256_text("Draft"), True, "2026-01-01T00:00:00+00:00"
+    )
     workspace.append_approval(event)
-    workspace.append_approval(ApprovalEvent("run", event.draft_hash, False, "2026-01-02T00:00:00+00:00"))
+    workspace.append_approval(
+        ApprovalEvent(
+            "run", event.draft_hash, False, "2026-01-02T00:00:00+00:00"
+        )
+    )
     assert not workspace.is_approved("run", event.draft_hash)
 
 

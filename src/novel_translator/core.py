@@ -8,13 +8,15 @@ import re
 import shutil
 import tempfile
 import uuid
+from asyncio import CancelledError
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
 from html.parser import HTMLParser
 from math import ceil
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, Final, Protocol, cast
 
 import httpx
 import yaml
@@ -28,6 +30,7 @@ from novel_translator.shared.errors import (
 )
 from novel_translator.shared.models import (
     ChapterIdentity,
+    RunPhase,
     RunRecord,
     RunStatus,
 )
@@ -35,6 +38,9 @@ from novel_translator.shared.utils import json_dumps, sha256_text
 
 DEFAULT_SEGMENT_LIMIT = 60_000
 PREVIOUS_TRANSLATION_CONTEXT_CHARS = 12_000
+TERMINAL_RUN_STATUSES: Final[frozenset[RunStatus]] = frozenset(
+    {RunStatus.DRAFT_COMPLETED, RunStatus.FAILED, RunStatus.INTERRUPTED}
+)
 
 
 class PageTitleParser(HTMLParser):
@@ -46,7 +52,9 @@ class PageTitleParser(HTMLParser):
         self.document_title: list[str] = []
         self._inside_title = False
 
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+    def handle_starttag(
+        self, tag: str, attrs: list[tuple[str, str | None]]
+    ) -> None:
         """Track title-bearing tags."""
         attributes = dict(attrs)
         if tag == "meta" and attributes.get("property") == "og:title":
@@ -85,7 +93,9 @@ class TranslationBible(BaseModel):
     title: str
     source_language: str = "ja"
     target_language: str = "en"
-    characters: list[BibleCharacter] = Field(default_factory=list[BibleCharacter])
+    characters: list[BibleCharacter] = Field(
+        default_factory=list[BibleCharacter]
+    )
     terminology: dict[str, str] = Field(default_factory=dict)
     honorific_rules: list[str] = Field(default_factory=list)
     naming_conventions: list[str] = Field(default_factory=list)
@@ -96,9 +106,15 @@ class TranslationBible(BaseModel):
     def validate_canonical_names(self) -> TranslationBible:
         """Reject duplicate names and aliases that collide with canonical names."""
         names = [character.name.casefold() for character in self.characters]
-        aliases = [alias.casefold() for character in self.characters for alias in character.aliases]
+        aliases = [
+            alias.casefold()
+            for character in self.characters
+            for alias in character.aliases
+        ]
         if len(names) != len(set(names)) or set(names).intersection(aliases):
-            raise ValueError("Character canonical names and aliases must be unambiguous.")
+            raise ValueError(
+                "Character canonical names and aliases must be unambiguous."
+            )
         return self
 
 
@@ -149,11 +165,15 @@ def read_source(value: str) -> SourceDocument:
         title_parser.feed(response.text)
         text = re.sub(r"<[^>]+>", "", response.text).strip()
         if not text:
-            raise ValidationError("Kakuyomu page did not contain readable text.")
+            raise ValidationError(
+                "Kakuyomu page did not contain readable text."
+            )
         return SourceDocument(text, value, title_parser.title())
     path = Path(value)
     if not path.is_file():
-        raise ValidationError("Source must be a readable file or Kakuyomu URL.")
+        raise ValidationError(
+            "Source must be a readable file or Kakuyomu URL."
+        )
     try:
         text = path.read_text(encoding="utf-8").strip()
     except UnicodeDecodeError as error:
@@ -169,14 +189,21 @@ def build_context(bible: TranslationBible) -> str:
         f"Title: {bible.title}",
         f"Translate {bible.source_language} to {bible.target_language}.",
     ]
-    for character in sorted(bible.characters, key=lambda item: item.name.casefold()):
+    for character in sorted(
+        bible.characters, key=lambda item: item.name.casefold()
+    ):
         lines.append(f"Character: {character.name}")
         if character.aliases:
             aliases = ", ".join(sorted(character.aliases, key=str.casefold))
             lines.append(f"Aliases: {aliases}")
-    lines.extend(f"Term: {source} => {target}" for source, target in sorted(bible.terminology.items()))
+    lines.extend(
+        f"Term: {source} => {target}"
+        for source, target in sorted(bible.terminology.items())
+    )
     lines.extend(f"Honorific rule: {item}" for item in bible.honorific_rules)
-    lines.extend(f"Naming convention: {item}" for item in bible.naming_conventions)
+    lines.extend(
+        f"Naming convention: {item}" for item in bible.naming_conventions
+    )
     lines.extend(f"Style: {item}" for item in bible.style_instructions)
     return "\n".join(lines)
 
@@ -189,7 +216,10 @@ def estimate_tokens(text: str, language: str) -> int:
 
 def extract_draft_title(draft: str, chapter: int) -> str | None:
     """Extract a matching English episode heading from a raw translation draft."""
-    pattern = re.compile(rf"^(?:#+\s*)?(?:Chapter|Episode)\s+{chapter}\s*[:–-]\s*.+$", re.IGNORECASE)
+    pattern = re.compile(
+        rf"^(?:#+\s*)?(?:Chapter|Episode)\s+{chapter}\s*[:–-]\s*.+$",
+        re.IGNORECASE,
+    )
     for line in (line.strip() for line in draft.splitlines() if line.strip()):
         if pattern.fullmatch(line):
             return line.lstrip("#").strip()
@@ -216,7 +246,9 @@ def segment_text(text: str, limit: int = DEFAULT_SEGMENT_LIMIT) -> list[str]:
         sentences = re.split(r"(?<=[。！？.!?])", paragraph)
         for sentence in sentences:
             if len(sentence) > limit:
-                raise ValidationError("A sentence exceeds the configured segment limit.")
+                raise ValidationError(
+                    "A sentence exceeds the configured segment limit."
+                )
             if current and len(current) + len(sentence) > limit:
                 segments.append(current)
                 current = sentence
@@ -225,7 +257,9 @@ def segment_text(text: str, limit: int = DEFAULT_SEGMENT_LIMIT) -> list[str]:
     if current:
         segments.append(current)
     if "".join(segments) != text:
-        raise IntegrityError("Segmentation must reconstruct the normalized source exactly.")
+        raise IntegrityError(
+            "Segmentation must reconstruct the normalized source exactly."
+        )
     return segments
 
 
@@ -238,18 +272,39 @@ class Workspace:
 
     def _safe(self, relative: Path) -> Path:
         target = (self.root / relative).resolve()
-        if os.path.commonpath([self.root, target]) != str(self.root) or target.is_symlink():
-            raise ValidationError("Path escapes the workspace or is a symlink.")
+        if (
+            os.path.commonpath([self.root, target]) != str(self.root)
+            or target.is_symlink()
+        ):
+            raise ValidationError(
+                "Path escapes the workspace or is a symlink."
+            )
         return target
 
     def _atomic_write(self, path: Path, content: str) -> None:
         if path.exists():
-            raise IntegrityError(f"Immutable artifact already exists: {path.name}")
+            raise IntegrityError(
+                f"Immutable artifact already exists: {path.name}"
+            )
+        self._atomic_replace(path, content)
+
+    def _atomic_replace(self, path: Path, content: str) -> None:
+        """Durably replace one file without exposing partial content."""
         path.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as handle:
-            handle.write(content)
-            temporary = Path(handle.name)
-        temporary.replace(path)
+        temporary: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w", encoding="utf-8", dir=path.parent, delete=False
+            ) as handle:
+                temporary = Path(handle.name)
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+            temporary.replace(path)
+        finally:
+            if temporary is not None and temporary.exists():
+                with suppress(OSError):
+                    temporary.unlink()
 
     def create_run(
         self,
@@ -263,7 +318,9 @@ class Workspace:
             raise IntegrityError("Run identifier collision.")
         run_dir.mkdir(parents=True)
         self._atomic_write(run_dir / "source.txt", source.content)
-        self._atomic_write(run_dir / "bible.json", bible.model_dump_json(indent=2))
+        self._atomic_write(
+            run_dir / "bible.json", bible.model_dump_json(indent=2)
+        )
         self._atomic_write(run_dir / "run.json", json_dumps(asdict(record)))
         return run_dir
 
@@ -276,13 +333,60 @@ class Workspace:
         self._atomic_write(run_dir / "draft.sha256", draft_hash)
         current = self._safe(Path("current") / f"{run_id}.json")
         current.parent.mkdir(parents=True, exist_ok=True)
-        temporary = current.with_suffix(".tmp")
-        temporary.write_text(
-            json_dumps({"run_id": run_id, "draft_hash": draft_hash}),
-            encoding="utf-8",
+        self._atomic_replace(
+            current, json_dumps({"run_id": run_id, "draft_hash": draft_hash})
         )
-        temporary.replace(current)
         return draft_hash
+
+    def transition_run(
+        self,
+        run_id: str,
+        status: RunStatus,
+        completed_at: datetime,
+        updates: dict[str, object] | None = None,
+    ) -> None:
+        """Atomically apply one valid terminal transition to a started run."""
+        if status not in TERMINAL_RUN_STATUSES:
+            raise IntegrityError(f"Invalid terminal run status: {status}.")
+        path = self._safe(Path("runs") / run_id / "run.json")
+        payload = cast(
+            dict[str, object], json.loads(path.read_text(encoding="utf-8"))
+        )
+        if payload.get("status") != RunStatus.STARTED:
+            raise IntegrityError(
+                "Only a started run can transition to a terminal status."
+            )
+        payload.update(updates or {})
+        payload.update(
+            {"status": status, "completed_at": completed_at.isoformat()}
+        )
+        self._atomic_replace(path, json_dumps(payload))
+
+    def terminate_run(
+        self,
+        run_id: str,
+        status: RunStatus,
+        error: BaseException,
+        phase: RunPhase,
+        segment: int | None,
+        attempt: int | None,
+        completed_at: datetime,
+    ) -> None:
+        """Record bounded failure metadata without persisting exception messages."""
+        if status not in {RunStatus.FAILED, RunStatus.INTERRUPTED}:
+            raise IntegrityError(
+                "A terminated run must be failed or interrupted."
+            )
+        failure: dict[str, object] = {
+            "type": type(error).__name__[:100],
+            "phase": phase,
+            "timestamp": completed_at.isoformat(),
+        }
+        if segment is not None:
+            failure["segment"] = segment
+        if attempt is not None:
+            failure["attempt"] = attempt
+        self.transition_run(run_id, status, completed_at, {"error": failure})
 
     def complete_run(
         self,
@@ -295,35 +399,44 @@ class Workspace:
     ) -> None:
         """Record final audit metrics after an immutable draft has been persisted."""
         path = self._safe(Path("runs") / run_id / "run.json")
-        payload = cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
-        if payload.get("status") != RunStatus.STARTED:
-            raise IntegrityError("Only a started run can be completed.")
-        payload.update(
+        payload = cast(
+            dict[str, object], json.loads(path.read_text(encoding="utf-8"))
+        )
+        self.transition_run(
+            run_id,
+            RunStatus.DRAFT_COMPLETED,
+            completed_at,
             {
-                "status": RunStatus.DRAFT_COMPLETED,
-                "completed_at": completed_at.isoformat(),
                 "duration_seconds": round(duration_seconds, 3),
-                "character_counts": {"source": len(source.content), "draft": len(draft)},
+                "character_counts": {
+                    "source": len(source.content),
+                    "draft": len(draft),
+                },
                 "token_estimates": {
-                    "source": estimate_tokens(source.content, bible.source_language),
+                    "source": estimate_tokens(
+                        source.content, bible.source_language
+                    ),
                     "draft": estimate_tokens(draft, bible.target_language),
                     "method": "characters_per_token: ja=1, other_languages=4",
                 },
-                "draft_title": extract_draft_title(draft, cast(dict[str, int], payload["identity"])["chapter"]),
-            }
+                "draft_title": extract_draft_title(
+                    draft, cast(dict[str, int], payload["identity"])["chapter"]
+                ),
+            },
         )
-        temporary = path.with_suffix(".tmp")
-        temporary.write_text(json_dumps(payload), encoding="utf-8")
-        temporary.replace(path)
 
     def draft(self, run_id: str) -> str:
         """Read the current immutable draft."""
-        return self._safe(Path("runs") / run_id / "draft.md").read_text(encoding="utf-8")
+        return self._safe(Path("runs") / run_id / "draft.md").read_text(
+            encoding="utf-8"
+        )
 
     def draft_title(self, run_id: str) -> str | None:
         """Read the stored title or infer one for a legacy raw draft."""
         path = self._safe(Path("runs") / run_id / "run.json")
-        payload = cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
+        payload = cast(
+            dict[str, object], json.loads(path.read_text(encoding="utf-8"))
+        )
         title = payload.get("draft_title")
         if isinstance(title, str) and title.strip():
             return title
@@ -336,12 +449,16 @@ class Workspace:
     def volume(self, run_id: str) -> int | None:
         """Read the optional positive volume persisted with a run."""
         path = self._safe(Path("runs") / run_id / "run.json")
-        payload = cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
+        payload = cast(
+            dict[str, object], json.loads(path.read_text(encoding="utf-8"))
+        )
         value = payload.get("volume")
         if value is None:
             return None
         if type(value) is not int or value < 1:
-            raise IntegrityError("Run volume must be a positive integer when present.")
+            raise IntegrityError(
+                "Run volume must be a positive integer when present."
+            )
         return value
 
     def append_approval(self, event: ApprovalEvent) -> None:
@@ -349,7 +466,10 @@ class Workspace:
         path = self._safe(Path("editorial") / "approvals.jsonl")
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(asdict(event), ensure_ascii=False, sort_keys=True) + "\n")
+            handle.write(
+                json.dumps(asdict(event), ensure_ascii=False, sort_keys=True)
+                + "\n"
+            )
 
     def is_approved(self, run_id: str, draft_hash: str) -> bool:
         """Return the latest matching approval decision for a run and hash."""
@@ -358,7 +478,10 @@ class Workspace:
         if path.exists():
             for line in path.read_text(encoding="utf-8").splitlines():
                 event = json.loads(line)
-                if event["run_id"] == run_id and event["draft_hash"] == draft_hash:
+                if (
+                    event["run_id"] == run_id
+                    and event["draft_hash"] == draft_hash
+                ):
                     latest = event
         return bool(latest and latest["approved"])
 
@@ -366,7 +489,9 @@ class Workspace:
 class TranslationService:
     """Coordinates validated translation without coupling to a provider."""
 
-    def __init__(self, workspace: Workspace, gateway: TranslatorGateway) -> None:
+    def __init__(
+        self, workspace: Workspace, gateway: TranslatorGateway
+    ) -> None:
         self._workspace = workspace
         self._gateway = gateway
 
@@ -379,7 +504,8 @@ class TranslationService:
         model: str,
         volume: int | None = None,
         progress: Callable[[int, int, int], None] | None = None,
-        retry_notice: Callable[[int, int, int, httpx.TransportError], None] | None = None,
+        retry_notice: Callable[[int, int, int, httpx.TransportError], None]
+        | None = None,
         segment_limit: int = DEFAULT_SEGMENT_LIMIT,
     ) -> str:
         """Create a run, translate each segment and persist a complete draft."""
@@ -402,52 +528,109 @@ class TranslationService:
             source.extracted_title,
         )
         self._workspace.create_run(record, source, bible)
-        segments = segment_text(source.content, segment_limit)
-        translations: list[str] = []
-        previous_translation = ""
-        for index, segment in enumerate(segments, start=1):
-            continuity_context = ""
-            if previous_translation:
-                continuity_context = (
-                    "\n\nPrevious translated passage for continuity only; do not repeat it:\n"
-                    f"{previous_translation[-PREVIOUS_TRANSLATION_CONTEXT_CHARS:]}"
-                )
-            prompt = (
-                f"{context}{continuity_context}\n\nSegment {index}:\n{segment}\n\nReturn only English translation."
+        phase = RunPhase.TRANSLATION
+        current_segment: int | None = None
+        current_attempt: int | None = None
+        try:
+            segments = segment_text(source.content, segment_limit)
+            translations: list[str] = []
+            previous_translation = ""
+            for index, segment in enumerate(segments, start=1):
+                current_segment = index
+                continuity_context = ""
+                if previous_translation:
+                    continuity_context = (
+                        "\n\nPrevious translated passage for continuity only; do not repeat it:\n"
+                        f"{previous_translation[-PREVIOUS_TRANSLATION_CONTEXT_CHARS:]}"
+                    )
+                prompt = f"{context}{continuity_context}\n\nSegment {index}:\n{segment}\n\nReturn only English translation."
+                for attempt in range(1, 4):
+                    current_attempt = attempt
+                    if progress is not None:
+                        progress(index, len(segments), attempt)
+                    try:
+                        translation = self._gateway.translate(prompt)
+                        translations.append(translation)
+                        previous_translation = translation
+                        break
+                    except httpx.TransportError as error:
+                        if retry_notice is not None:
+                            retry_notice(index, len(segments), attempt, error)
+                else:
+                    raise ValidationError(
+                        "Translation failed after three attempts."
+                    )
+            draft = "".join(translations)
+            phase = RunPhase.DRAFT_PERSISTENCE
+            current_segment = None
+            current_attempt = None
+            self._workspace.save_draft(run_id, draft)
+            phase = RunPhase.FINALIZATION
+            completed_at = datetime.now(UTC)
+            self._workspace.complete_run(
+                run_id,
+                completed_at,
+                (completed_at - started_at).total_seconds(),
+                source,
+                draft,
+                bible,
             )
-            last_error: Exception | None = None
-            for attempt in range(1, 4):
-                if progress is not None:
-                    progress(index, len(segments), attempt)
-                try:
-                    translation = self._gateway.translate(prompt)
-                    translations.append(translation)
-                    previous_translation = translation
-                    break
-                except httpx.TransportError as error:
-                    last_error = error
-                    if retry_notice is not None:
-                        retry_notice(index, len(segments), attempt, error)
-            else:
-                raise ValidationError(f"Translation failed after three attempts: {last_error}")
-        draft = "".join(translations)
-        self._workspace.save_draft(run_id, draft)
-        completed_at = datetime.now(UTC)
-        self._workspace.complete_run(
-            run_id,
-            completed_at,
-            (completed_at - started_at).total_seconds(),
-            source,
-            draft,
-            bible,
-        )
+        except (KeyboardInterrupt, CancelledError) as error:
+            self._record_termination(
+                run_id,
+                RunStatus.INTERRUPTED,
+                error,
+                phase,
+                current_segment,
+                current_attempt,
+            )
+            raise
+        except Exception as error:
+            self._record_termination(
+                run_id,
+                RunStatus.FAILED,
+                error,
+                phase,
+                current_segment,
+                current_attempt,
+            )
+            raise
         return run_id
 
+    def _record_termination(
+        self,
+        run_id: str,
+        status: RunStatus,
+        error: BaseException,
+        phase: RunPhase,
+        segment: int | None,
+        attempt: int | None,
+    ) -> None:
+        """Best-effort terminal recording that never masks the original failure."""
+        try:
+            self._workspace.terminate_run(
+                run_id,
+                status,
+                error,
+                phase,
+                segment,
+                attempt,
+                datetime.now(UTC),
+            )
+        except Exception as lifecycle_error:
+            error.add_note(
+                f"Could not persist terminal run state: {type(lifecycle_error).__name__}"
+            )
 
-def approve(workspace: Workspace, run_id: str, approved: bool = True) -> ApprovalEvent:
+
+def approve(
+    workspace: Workspace, run_id: str, approved: bool = True
+) -> ApprovalEvent:
     """Append the current approval decision for a complete draft."""
     draft = workspace.draft(run_id)
-    event = ApprovalEvent(run_id, sha256_text(draft), approved, datetime.now(UTC).isoformat())
+    event = ApprovalEvent(
+        run_id, sha256_text(draft), approved, datetime.now(UTC).isoformat()
+    )
     workspace.append_approval(event)
     return event
 
@@ -467,14 +650,20 @@ def export_draft(
         raise ApprovalRequired("The current draft hash has not been approved.")
     title = title or workspace.draft_title(run_id)
     if title is None:
-        raise ValidationError("No draft title found; pass --title to export this run.")
+        raise ValidationError(
+            "No draft title found; pass --title to export this run."
+        )
     if publish_date is None:
         rendered_publish_date = date.today().isoformat()
     else:
         try:
-            rendered_publish_date = date.fromisoformat(publish_date).isoformat()
+            rendered_publish_date = date.fromisoformat(
+                publish_date
+            ).isoformat()
         except ValueError as error:
-            raise ValidationError("publish_date must use the YYYY-MM-DD format.") from error
+            raise ValidationError(
+                "publish_date must use the YYYY-MM-DD format."
+            ) from error
     destination = destination.resolve()
     volume = workspace.volume(run_id)
     front_matter = [
@@ -485,8 +674,14 @@ def export_draft(
     if volume is not None:
         front_matter.append(f"volume: {volume}")
     rendered = "\n".join([*front_matter, "---", "", draft, ""])
-    if destination.exists() and destination.read_text(encoding="utf-8") != rendered and not overwrite:
-        raise CollisionRequired("Destination differs; pass explicit overwrite confirmation.")
+    if (
+        destination.exists()
+        and destination.read_text(encoding="utf-8") != rendered
+        and not overwrite
+    ):
+        raise CollisionRequired(
+            "Destination differs; pass explicit overwrite confirmation."
+        )
     destination.parent.mkdir(parents=True, exist_ok=True)
     backup = destination.with_suffix(destination.suffix + ".bak")
     try:

@@ -33,7 +33,11 @@ from novel_translator.shared.errors import (
     IntegrityError,
     ValidationError,
 )
-from novel_translator.shared.models import ChapterIdentity, RunStatus
+from novel_translator.shared.models import (
+    ChapterIdentity,
+    RunStatus,
+    SegmentPromptManifest,
+)
 from novel_translator.shared.utils import json_dumps, sha256_text
 
 VALID_RUN_ID = "0" * 32
@@ -190,6 +194,41 @@ def test_translation_records_failure_during_draft_persistence(
     assert "segment" not in run["error"]
     assert "attempt" not in run["error"]
     assert "super-secret" not in serialized
+
+
+def test_new_segment_clears_attempt_before_recording_prompt(
+    tmp_path: Path,
+) -> None:
+    """A pre-attempt failure cannot inherit the prior segment's attempt."""
+    workspace = Workspace(tmp_path)
+    original_record_prompt_segment = workspace.record_prompt_segment
+
+    def fail_on_second_segment(run_id: str, segment: SegmentPromptManifest) -> None:
+        if segment.segment_index == 2:
+            raise OSError("manifest write failed")
+        original_record_prompt_segment(run_id, segment)
+
+    workspace.record_prompt_segment = Mock(  # type: ignore[method-assign]
+        side_effect=fail_on_second_segment
+    )
+    gateway = Mock()
+    gateway.translate.return_value = "translated"
+
+    with pytest.raises(OSError, match="manifest write failed"):
+        TranslationService(workspace, gateway).translate(
+            ChapterIdentity("novel", 1),
+            SourceDocument("first\nsecond\n", "test"),
+            TranslationBible.model_validate({"title": "Novel"}),
+            "test",
+            "test-model",
+            segment_limit=7,
+        )
+
+    run_path = next((tmp_path / "runs").glob("*/run.json"))
+    run = json.loads(run_path.read_text(encoding="utf-8"))
+    assert gateway.translate.call_count == 1
+    assert run["error"]["segment"] == 2
+    assert "attempt" not in run["error"]
 
 
 def test_workspace_rejects_a_second_terminal_transition(

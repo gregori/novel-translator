@@ -576,6 +576,7 @@ class TranslationService:
             previous_translation = ""
             for index, segment in enumerate(segments, start=1):
                 current_segment = index
+                current_attempt = None
                 continuity_context = ""
                 if previous_translation:
                     continuity_context = (

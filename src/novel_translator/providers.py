@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from queue import Empty, Queue
 from threading import Thread
 from typing import Final, cast
+from uuid import uuid4
 
 import httpx
 from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
@@ -43,6 +44,7 @@ class OpenAICompatibleGateway:
         self._model = config.model
         self._api_key = config.api_key
         self._timeout_seconds = config.timeout_seconds
+        self._session_id = uuid4().hex
         self._client = client or OpenAI(
             api_key=config.api_key,
             base_url=self._base_url,
@@ -59,6 +61,7 @@ class OpenAICompatibleGateway:
                 response = self._client.chat.completions.create(
                     model=self._model,
                     messages=[{"role": "user", "content": prompt}],
+                    extra_headers={"x-opencode-session": self._session_id},
                 )
             except Exception as error:
                 result_queue.put(error)

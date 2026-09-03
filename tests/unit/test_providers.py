@@ -2,6 +2,7 @@
 
 import json
 from threading import Event
+from uuid import UUID
 
 import httpx
 import httpx2
@@ -91,6 +92,25 @@ def test_opencode_go_sends_chat_completion_contract() -> None:
             "model": "test-model",
         },
     }
+
+
+def test_opencode_go_reuses_session_header() -> None:
+    """All requests made by one gateway share a valid session identifier."""
+    session_ids: list[str] = []
+
+    def handle_request(request: httpx2.Request) -> httpx2.Response:
+        session_ids.append(request.headers["x-opencode-session"])
+        return completion_response()
+
+    gateway = OpenAICompatibleGateway(
+        OpenCodeGoConfig("https://example.test/v1", "test-model", "secret"),
+        client=sdk_client(httpx2.MockTransport(handle_request)),
+    )
+
+    assert gateway.translate("first segment") == "translated"
+    assert gateway.translate("second segment") == "translated"
+    assert len(set(session_ids)) == 1
+    assert UUID(hex=session_ids[0]).hex == session_ids[0]
 
 
 def test_gateway_enforces_a_total_request_deadline() -> None:

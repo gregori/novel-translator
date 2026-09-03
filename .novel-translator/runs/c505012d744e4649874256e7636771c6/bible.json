@@ -1,0 +1,75 @@
+{
+  "title": "The Studious Boy and the Secret Account Girl",
+  "source_language": "ja",
+  "target_language": "en",
+  "characters": [
+    {
+      "name": "Kariya Tsutomu",
+      "aliases": [
+        "Tsutomu",
+        "Kariya-kun"
+      ]
+    },
+    {
+      "name": "Tachibana Matsurika",
+      "aliases": [
+        "Matsurika",
+        "Tachibana-san",
+        "Matsurika-san"
+      ]
+    },
+    {
+      "name": "Amakusa Shiro",
+      "aliases": [
+        "Amakusa",
+        "Amakusa-kun",
+        "Shiro"
+      ]
+    }
+  ],
+  "terminology": {
+    "ガリ勉": "studious boy (but keep Gariben as the alias the students give the boy)",
+    "裏アカ": "secret account",
+    "裏垢": "secret account",
+    "SNS": "social media",
+    "兄さん": "Nii-san",
+    "ゴールデンウィーク": "Golden Week",
+    "担任": "homeroom teacher",
+    "生徒指導": "student discipline teacher",
+    "文化祭": "school festival",
+    "クラスのアイドル": "class idol",
+    "中学校": "middle school",
+    "がり勉ノート": "Gariben Notebook",
+    "美人コンテスト": "beauty contest",
+    "自撮り": "selfie",
+    "中間試験": "midterm exams",
+    "中間テスト": "midterm exams",
+    "図書館": "library",
+    "カラオケ": "karaoke",
+    "打ち上げ": "celebration"
+  },
+  "honorific_rules": [
+    "Preserve Japanese honorifics such as -san and -kun when they signal relationship or social distance.",
+    "Preserve family vocatives such as Nii-san unless English dialogue requires an explicit natural equivalent.",
+    "Preserve school terms like sensei, senpai and kouhai, unless the English dialogue requires an explicit natural equivalent."
+  ],
+  "naming_conventions": [
+    "Keep Japanese names in surname-first order: Kariya Tsutomu and Tachibana Matsurika, Amakusa Shiro and so on. **Do not** use <firstname surname> order!",
+    "Keep the anonymous account name as RIKA in all capitals; render its display name as RIKA@Secret Account when it heads a social-media post.",
+    "RIKA is Tachibana Matsurika's anonymous erotic-photo account. Tsutomu knows this identity and keeps it confidential; retain RIKA as the account pseudonym rather than replacing it with Matsurika.",
+    "Keep Gariben as Tsutomu's school nickname and Gariben Notebook as the name of his study notebook; the nickname is a pun on his given name, Tsutomu (勉 / ben)."
+  ],
+  "style_instructions": [
+    "Use natural contemporary English in past tense for a Japanese high-school romantic comedy.",
+    "Keep narration in close third person around Kariya Tsutomu and preserve his dry, judgmental, literal-minded inner voice, including his self-effacing conviction that he is ordinary rather than gifted.",
+    "Preserve clearly marked internal monologue and social-media posts as distinct text when present in the source.",
+    "When it's clear that a sentence is an internal thought, style it in italic.",
+    "Preserve the contrast between Matsurika's polished public school-idol persona and her private, playful, direct, and occasionally vulnerable manner with Tsutomu. Do not flatten her dialogue into generic gyaru slang.",
+    "By chapter 26, Tsutomu and Matsurika have agreed to be friends. They study together openly after school, while her RIKA identity and their direct SNS exchanges remain private.",
+    "Translate sexual material accurately and neutrally; do not intensify, sanitize, or add detail.",
+    "Preserve Japanese school and cultural terms that have an established English usage, including Golden Week and school festival.",
+    "Use the metric/international system whenever measurements appear.",
+    "Use \"chapter 1\" for 第１課; when there is a \"Part\", separate it with a dash: \"Chapter 1: Something - Part 1\"."
+  ],
+  "version": "chapters-01-26"
+}

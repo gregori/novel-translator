@@ -1,0 +1,48 @@
+{
+  "bible_hash": "87009cb9c0adfb2b9ddf2e755d7e99749da2d2891f9456b15878c30439314899",
+  "bible_version": "chapters-01-26",
+  "character_counts": {
+    "draft": 10612,
+    "source": 4067
+  },
+  "completed_at": "2026-09-03T01:42:00.876918+00:00",
+  "context_hash": "72b8b85fca7438e7dbf4327463fb132a7ac00ecf544772907c0423bd160170ee",
+  "draft_title": "Chapter 29: No Time for a Shared Umbrella—In the Midst of a Downpour",
+  "duration_seconds": 518.432,
+  "identity": {
+    "chapter": 29,
+    "novel": "gariben-kun-to-uraaka-san"
+  },
+  "model": "glm-5.3-flash",
+  "prompt_hash": "25769c4da544e596f58fcd97664fe37c17754b44a85d646c9bc008d2f667857c",
+  "prompt_template_hash": "fd29b0e309764333a600a2e048773d97dcd8bb15c878b482a92d538cd83fc2fa",
+  "prompt_template_version": "v1",
+  "prompt_version": "v1",
+  "provider": "opencode-go",
+  "run_id": "c505012d744e4649874256e7636771c6",
+  "schema_version": 2,
+  "segment_manifest": [
+    {
+      "continuity_context_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gateway_calls": [
+        {
+          "attempt": 1,
+          "rendered_prompt_hash": "1e1fa1246a61d10e3c7f8f10dcafad20b1f6d08b515ad1bc9917613401dde5d2"
+        }
+      ],
+      "rendered_prompt_hash": "1e1fa1246a61d10e3c7f8f10dcafad20b1f6d08b515ad1bc9917613401dde5d2",
+      "segment_index": 1,
+      "source_segment_hash": "a99ff1734e44f11c3b31caf15169a18421f9c5a9d35252f8314f2136e8b8fcc4"
+    }
+  ],
+  "source_hash": "a99ff1734e44f11c3b31caf15169a18421f9c5a9d35252f8314f2136e8b8fcc4",
+  "source_title": null,
+  "status": "draft_completed",
+  "timestamp": "2026-09-03T01:33:22.445210+00:00",
+  "token_estimates": {
+    "draft": 2653,
+    "method": "characters_per_token: ja=1, other_languages=4",
+    "source": 4067
+  },
+  "volume": 3
+}

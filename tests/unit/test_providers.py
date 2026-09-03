@@ -60,13 +60,9 @@ def test_opencode_go_resolves_to_supported_adapter() -> None:
 
 def test_unknown_provider_is_rejected() -> None:
     """An unsupported provider fails with the available choice."""
-    config = OpenCodeGoConfig(
-        "https://example.test/v1", "test-model", "secret"
-    )
+    config = OpenCodeGoConfig("https://example.test/v1", "test-model", "secret")
 
-    with pytest.raises(
-        ValidationError, match="Unsupported provider 'unknown'.*opencode-go"
-    ):
+    with pytest.raises(ValidationError, match="Unsupported provider 'unknown'.*opencode-go"):
         resolve_provider("unknown", config)
 
 
@@ -80,9 +76,7 @@ def test_opencode_go_sends_chat_completion_contract() -> None:
         captured["payload"] = json.loads(request.read())
         return completion_response()
 
-    config = OpenCodeGoConfig(
-        "https://example.test/v1", "test-model", "secret"
-    )
+    config = OpenCodeGoConfig("https://example.test/v1", "test-model", "secret")
     gateway = OpenAICompatibleGateway(
         config,
         client=sdk_client(httpx2.MockTransport(handle_request)),
@@ -107,9 +101,7 @@ def test_gateway_enforces_a_total_request_deadline() -> None:
         release_request.wait()
         return completion_response()
 
-    config = OpenCodeGoConfig(
-        "https://example.test/v1", "test-model", "secret", timeout_seconds=0.01
-    )
+    config = OpenCodeGoConfig("https://example.test/v1", "test-model", "secret", timeout_seconds=0.01)
     gateway = OpenAICompatibleGateway(
         config,
         client=sdk_client(httpx2.MockTransport(delayed_response)),
@@ -132,9 +124,7 @@ def test_gateway_reports_safe_provider_error_details() -> None:
             headers={"x-request-id": "request-123"},
         )
 
-    config = OpenCodeGoConfig(
-        "https://example.test/v1", "test-model", "secret"
-    )
+    config = OpenCodeGoConfig("https://example.test/v1", "test-model", "secret")
     gateway = OpenAICompatibleGateway(
         config,
         client=sdk_client(httpx2.MockTransport(forbidden_response)),
@@ -151,13 +141,9 @@ def test_gateway_redacts_configured_key_from_provider_error() -> None:
     """A provider response cannot echo the configured API key to the user."""
 
     def leaked_key_response(_: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(
-            401, json={"error": {"message": "Rejected secret-value"}}
-        )
+        return httpx2.Response(401, json={"error": {"message": "Rejected secret-value"}})
 
-    config = OpenCodeGoConfig(
-        "https://example.test/v1", "test-model", "secret-value"
-    )
+    config = OpenCodeGoConfig("https://example.test/v1", "test-model", "secret-value")
     gateway = OpenAICompatibleGateway(
         config,
         client=sdk_client(httpx2.MockTransport(leaked_key_response)),

@@ -38,9 +38,7 @@ class ProviderSelection:
 class OpenAICompatibleGateway:
     """Synchronous adapter backed by the official OpenAI Python SDK."""
 
-    def __init__(
-        self, config: OpenCodeGoConfig, *, client: OpenAI | None = None
-    ) -> None:
+    def __init__(self, config: OpenCodeGoConfig, *, client: OpenAI | None = None) -> None:
         self._base_url = config.base_url.rstrip("/")
         self._model = config.model
         self._api_key = config.api_key
@@ -75,13 +73,9 @@ class OpenAICompatibleGateway:
                 f"Provider did not complete the request within {self._timeout_seconds} seconds."
             ) from error
         if isinstance(result, APITimeoutError):
-            raise httpx.ReadTimeout(
-                str(result), request=httpx.Request("POST", self._base_url)
-            ) from result
+            raise httpx.ReadTimeout(str(result), request=httpx.Request("POST", self._base_url)) from result
         if isinstance(result, APIConnectionError):
-            raise httpx.ConnectError(
-                str(result), request=httpx.Request("POST", self._base_url)
-            ) from result
+            raise httpx.ConnectError(str(result), request=httpx.Request("POST", self._base_url)) from result
         if isinstance(result, APIStatusError):
             raise ValidationError(self._provider_error(result)) from result
         if isinstance(result, Exception):
@@ -98,9 +92,7 @@ class OpenAICompatibleGateway:
             typed_payload = cast(dict[str, object], payload)
             nested_error = typed_payload.get("error")
             error_message = (
-                cast(dict[str, object], nested_error).get("message")
-                if isinstance(nested_error, dict)
-                else None
+                cast(dict[str, object], nested_error).get("message") if isinstance(nested_error, dict) else None
             )
             message = typed_payload.get("message")
         else:
@@ -114,9 +106,7 @@ class OpenAICompatibleGateway:
             detail = "No error detail returned."
         if self._api_key:
             detail = detail.replace(self._api_key, "***")
-        suffix = (
-            f" Request ID: {error.request_id}." if error.request_id else ""
-        )
+        suffix = f" Request ID: {error.request_id}." if error.request_id else ""
         return f"Provider rejected request with HTTP {error.status_code}: {detail[:500]}.{suffix}"
 
 
@@ -126,15 +116,11 @@ _PROVIDER_FACTORIES: Final[dict[str, GatewayFactory]] = {
 }
 
 
-def resolve_provider(
-    provider: str, config: OpenCodeGoConfig
-) -> ProviderSelection:
+def resolve_provider(provider: str, config: OpenCodeGoConfig) -> ProviderSelection:
     """Resolve a configured provider to its canonical metadata and adapter."""
     canonical_name = provider.strip().casefold()
     factory = _PROVIDER_FACTORIES.get(canonical_name)
     if factory is None:
         supported = ", ".join(sorted(_PROVIDER_FACTORIES))
-        raise ValidationError(
-            f"Unsupported provider '{provider}'. Supported providers: {supported}."
-        )
+        raise ValidationError(f"Unsupported provider '{provider}'. Supported providers: {supported}.")
     return ProviderSelection(canonical_name, config.model, factory(config))

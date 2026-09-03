@@ -70,7 +70,11 @@ manifesto, sem duplicar conteúdo sensível.
 
 ```powershell
 uv run pytest
-uv run ruff check .
-uv run ruff format --check .
+uv run ruff check src tests
+uv run ruff format --check src tests
 uv run pyright
 ```
+
+Esses mesmos comandos rodam no CI em todo pull request. O escopo de lint e
+formatação inclui somente o código Python de produção e testes (`src` e `tests`),
+não os blocos de exemplo da documentação.

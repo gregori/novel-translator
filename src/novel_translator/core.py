@@ -478,14 +478,10 @@ class Workspace:
             raise IntegrityError("Run volume must be a positive integer when present.")
         return value
 
-    def inspect_run(
-        self, run_id: str, include_draft: bool = False
-    ) -> dict[str, object]:
+    def inspect_run(self, run_id: str, include_draft: bool = False) -> dict[str, object]:
         """Read validated run metadata and optionally its draft."""
         try:
-            serialized = self._run_path(run_id, "run.json").read_text(
-                encoding="utf-8"
-            )
+            serialized = self._run_path(run_id, "run.json").read_text(encoding="utf-8")
         except FileNotFoundError as error:
             raise ValidationError("Run metadata was not found.") from error
         except (OSError, UnicodeError) as error:
@@ -501,9 +497,7 @@ class Workspace:
             raise IntegrityError("Run metadata does not match the requested run ID.")
         if include_draft:
             try:
-                data["draft"] = self._run_path(run_id, "draft.md").read_text(
-                    encoding="utf-8"
-                )
+                data["draft"] = self._run_path(run_id, "draft.md").read_text(encoding="utf-8")
             except FileNotFoundError as error:
                 raise ValidationError("Run draft was not found.") from error
             except (OSError, UnicodeError) as error:

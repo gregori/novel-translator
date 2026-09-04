@@ -31,6 +31,7 @@ Variáveis já definidas no PowerShell ou no gerenciador de segredos do sistema 
 
 ```powershell
 novel-translator translate --novel minha-novel --chapter 1 --volume 1 --source chapter-ja.txt --bible config/translation-bible.example.yaml --provider opencode-go
+novel-translator translate --novel minha-novel --chapter 2 --source https://kakuyomu.jp/works/WORK_ID/episodes/EPISODE_ID --bible config/translation-bible.example.yaml --provider opencode-go
 novel-translator approve RUN_ID
 novel-translator export RUN_ID --destination ../novels-site/src/content/novels/minha-novel/001.md
 novel-translator inspect RUN_ID
@@ -38,9 +39,33 @@ novel-translator inspect RUN_ID
 
 `--volume` é opcional. Quando informado, deve ser inteiro positivo; ele é salvo no `run.json` e incluído como `volume` no front matter do Markdown exportado.
 
+`--source` aceita um arquivo UTF-8 ou a URL de um episódio do Kakuyomu. Para URLs, somente o título do episódio (`.widget-episodeTitle`) e o corpo (`.js-episode-body`) são enviados ao modelo; navegação, rodapé e demais elementos da página são descartados.
+
 O export usa o título do episódio detectado no draft. Use `--title "Título"` somente para substituí-lo explicitamente. O front matter inclui `publishDate` com a data da exportação; use `--publish-date YYYY-MM-DD` para informar a data original do capítulo. O `draft.md` permanece o texto cru da tradução; o front matter é criado apenas no arquivo exportado.
 
 Durante a tradução, a CLI informa o segmento e a tentativa em andamento. Por padrão, um capítulo de até 60.000 caracteres é enviado em uma única chamada. Capítulos maiores são divididos por parágrafos; cada segmento posterior recebe os últimos 12.000 caracteres da tradução anterior somente como contexto de continuidade. Ajuste o limite com `--segment-limit CARACTERES`. Cada chamada ao provedor tem um prazo total de 90 segundos por padrão; ajuste-o com `--request-timeout SEGUNDOS`.
+
+## Revisão editorial
+
+Nunca edite `draft.md` diretamente: ele é a saída imutável do modelo e seu hash é validado antes de aprovar ou exportar. Para editar um capítulo, crie uma revisão completa e imutável:
+
+```powershell
+novel-translator revise RUN_ID --input reviewed.md --note "Correções editoriais"
+novel-translator revise RUN_ID --input reviewed-v2.md --parent REVISION_ID
+novel-translator diff RUN_ID --revision REVISION_ID
+novel-translator approve RUN_ID --revision REVISION_ID
+novel-translator export RUN_ID --revision REVISION_ID --destination ../novels-site/src/content/novels/minha-novel/001.md
+```
+
+A primeira revisão referencia o draft gerado. Revisões posteriores exigem `--parent`; o sistema nunca escolhe a revisão mais recente automaticamente. Aprovações e exportações são vinculadas ao hash exato do artefato selecionado.
+
+Para capítulos legados cujo `draft.md` foi editado antes desse fluxo, crie explicitamente um snapshot publicado:
+
+```powershell
+novel-translator migrate-legacy-draft RUN_ID --as-published --note "Published chapter 27"
+```
+
+Quando o hash de `draft.md` divergir de `draft.sha256`, o conteúdo gerado original é marcado como indisponível. O sistema não o reconstrói e diffs históricos contra ele não podem ser calculados. Execute a migração uma vez para cada run publicado dos capítulos 27–31 listado na issue #22.
 
 ## Proveniência dos prompts
 

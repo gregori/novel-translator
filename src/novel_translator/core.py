@@ -12,25 +12,31 @@ from asyncio import CancelledError
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import asdict, dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from html.parser import HTMLParser
 from math import ceil
 from pathlib import Path
 from typing import Any, Final, Protocol, cast
+from urllib.parse import urlsplit
 
 import httpx
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from novel_translator.shared.errors import (
-    ApprovalRequired,
-    CollisionRequired,
     IntegrityError,
     ValidationError,
 )
 from novel_translator.shared.models import (
+    ArtifactKind,
     ChapterIdentity,
+    EditorialApproval,
+    EditorialArtifact,
     PromptCall,
+    RevisionKind,
+    RevisionParent,
+    RevisionParentKind,
+    RevisionRecord,
     RunPhase,
     RunRecord,
     RunStatus,
@@ -51,37 +57,75 @@ TERMINAL_RUN_STATUSES: Final[frozenset[RunStatus]] = frozenset(
 )
 
 
-class PageTitleParser(HTMLParser):
-    """Extract the Open Graph or document title from a fetched HTML page."""
+class KakuyomuEpisodeParser(HTMLParser):
+    """Extract the episode title and body from a Kakuyomu HTML page."""
 
     def __init__(self) -> None:
         super().__init__()
-        self.open_graph_title: str | None = None
-        self.document_title: list[str] = []
-        self._inside_title = False
+        self._title_depth = 0
+        self._body_depth = 0
+        self._paragraph_depth = 0
+        self._title_parts: list[str] = []
+        self._paragraph_parts: list[str] = []
+        self._paragraphs: list[str] = []
+
+    @staticmethod
+    def _classes(attrs: list[tuple[str, str | None]]) -> set[str]:
+        """Return the class tokens from one start tag."""
+        class_value = dict(attrs).get("class") or ""
+        return set(class_value.split())
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        """Track title-bearing tags."""
-        attributes = dict(attrs)
-        if tag == "meta" and attributes.get("property") == "og:title":
-            self.open_graph_title = attributes.get("content")
-        if tag == "title":
-            self._inside_title = True
+        """Enter the selected title, body, and body paragraphs."""
+        classes = self._classes(attrs)
+        if self._body_depth:
+            if tag == "br":
+                if self._paragraph_depth:
+                    self._paragraph_parts.append("\n")
+                return
+            self._body_depth += 1
+            if tag == "p" and not self._paragraph_depth:
+                self._paragraph_depth = self._body_depth
+                self._paragraph_parts = []
+            return
+        if "js-episode-body" in classes:
+            self._body_depth = 1
+            return
+        if self._title_depth:
+            self._title_depth += 1
+        elif "widget-episodeTitle" in classes:
+            self._title_depth = 1
 
     def handle_endtag(self, tag: str) -> None:
-        """Stop collecting document-title text."""
-        if tag == "title":
-            self._inside_title = False
+        """Leave selected elements and finish body paragraphs."""
+        if tag == "br":
+            return
+        if self._body_depth:
+            if tag == "p" and self._paragraph_depth == self._body_depth:
+                paragraph = "".join(self._paragraph_parts).rstrip("\r\n")
+                self._paragraphs.append(paragraph if paragraph.strip() else "")
+                self._paragraph_depth = 0
+                self._paragraph_parts = []
+            self._body_depth -= 1
+        elif self._title_depth:
+            self._title_depth -= 1
 
     def handle_data(self, data: str) -> None:
-        """Collect plain text within a document title."""
-        if self._inside_title:
-            self.document_title.append(data)
+        """Collect text only from the selected episode elements."""
+        if self._body_depth and self._paragraph_depth:
+            self._paragraph_parts.append(data)
+        elif self._title_depth:
+            self._title_parts.append(data)
 
     def title(self) -> str | None:
-        """Return a non-empty preferred page title."""
-        candidate = self.open_graph_title or "".join(self.document_title)
+        """Return the non-empty episode title when present."""
+        candidate = "".join(self._title_parts)
         return candidate.strip() or None
+
+    def body(self) -> str | None:
+        """Return the episode paragraphs with their blank-line structure."""
+        candidate = "\n".join(self._paragraphs).strip("\r\n")
+        return candidate if candidate.strip() else None
 
 
 class BibleCharacter(BaseModel):
@@ -155,16 +199,21 @@ def load_bible(path: Path) -> TranslationBible:
 def read_source(value: str) -> SourceDocument:
     """Read a local UTF-8 file or supported Kakuyomu URL."""
     if value.startswith(("http://", "https://")):
-        if "kakuyomu.jp" not in value:
+        if urlsplit(value).hostname != "kakuyomu.jp":
             raise ValidationError("Only Kakuyomu URLs are supported in v1.")
-        response = httpx.get(value, timeout=120.0)
-        response.raise_for_status()
-        title_parser = PageTitleParser()
-        title_parser.feed(response.text)
-        text = re.sub(r"<[^>]+>", "", response.text).strip()
-        if not text:
-            raise ValidationError("Kakuyomu page did not contain readable text.")
-        return SourceDocument(text, value, title_parser.title())
+        try:
+            response = httpx.get(value, timeout=120.0, follow_redirects=True)
+            response.raise_for_status()
+        except httpx.HTTPError as error:
+            raise ValidationError(f"Could not download Kakuyomu source: {type(error).__name__}.") from error
+        parser = KakuyomuEpisodeParser()
+        parser.feed(response.text)
+        parser.close()
+        title = parser.title()
+        body = parser.body()
+        if title is None or body is None:
+            raise ValidationError("Kakuyomu page did not contain an episode title and body.")
+        return SourceDocument(f"{title}\n\n{body}", value, title)
     path = Path(value)
     if not path.is_file():
         raise ValidationError("Source must be a readable file or Kakuyomu URL.")
@@ -204,12 +253,17 @@ def estimate_tokens(text: str, language: str) -> int:
 def extract_draft_title(draft: str, chapter: int) -> str | None:
     """Extract a matching English episode heading from a raw translation draft."""
     pattern = re.compile(
-        rf"^(?:#+\s*)?(?:Chapter|Episode)\s+{chapter}\s*[:–-]\s*.+$",
+        rf"^(?:Chapter|Episode)\s+{chapter}\s*[:–-]\s*.+$",
         re.IGNORECASE,
     )
     for line in (line.strip() for line in draft.splitlines() if line.strip()):
-        if pattern.fullmatch(line):
-            return line.lstrip("#").strip()
+        candidate = line.lstrip("#").strip()
+        for marker in ("**", "__"):
+            if candidate.startswith(marker) and candidate.endswith(marker):
+                candidate = candidate.removeprefix(marker).removesuffix(marker).strip()
+                break
+        if pattern.fullmatch(candidate):
+            return candidate
     return None
 
 
@@ -300,6 +354,12 @@ class Workspace:
             raise ValidationError("Run ID must be 32 lowercase hexadecimal characters.")
         return self._safe(Path("runs") / run_id / Path(*parts))
 
+    def _revision_path(self, run_id: str, revision_id: str, *parts: str) -> Path:
+        """Return a safe path below a validated revision identifier."""
+        if RUN_ID_PATTERN.fullmatch(revision_id) is None:
+            raise ValidationError("Revision ID must be 32 lowercase hexadecimal characters.")
+        return self._run_path(run_id, "revisions", revision_id, *parts)
+
     def _atomic_write(self, path: Path, content: str) -> None:
         if path.exists():
             raise IntegrityError(f"Immutable artifact already exists: {path.name}")
@@ -348,6 +408,107 @@ class Workspace:
         current.parent.mkdir(parents=True, exist_ok=True)
         self._atomic_replace(current, json_dumps({"run_id": run_id, "draft_hash": draft_hash}))
         return draft_hash
+
+    def generated_draft(self, run_id: str) -> EditorialArtifact:
+        """Read and verify the immutable generated draft for a run."""
+        try:
+            content = self._run_path(run_id, "draft.md").read_text(encoding="utf-8")
+            expected_hash = self._run_path(run_id, "draft.sha256").read_text(encoding="utf-8").strip()
+        except FileNotFoundError as error:
+            raise IntegrityError("Generated draft is unavailable; use a migrated revision instead.") from error
+        except (OSError, UnicodeError) as error:
+            raise ValidationError("Generated draft could not be read.") from error
+        actual_hash = sha256_text(content)
+        if expected_hash != actual_hash:
+            raise IntegrityError("Generated draft integrity check failed; use a migrated revision when applicable.")
+        current = self._safe(Path("current") / f"{run_id}.json")
+        if current.exists():
+            try:
+                projection = cast(dict[str, object], json.loads(current.read_text(encoding="utf-8")))
+            except (OSError, UnicodeError, json.JSONDecodeError) as error:
+                raise IntegrityError("Generated draft projection is invalid.") from error
+            if projection.get("run_id") != run_id or projection.get("draft_hash") != actual_hash:
+                raise IntegrityError("Generated draft projection integrity check failed.")
+        return EditorialArtifact(ArtifactKind.GENERATED_DRAFT, None, content, actual_hash)
+
+    def legacy_draft_snapshot(self, run_id: str) -> tuple[str, str]:
+        """Read legacy draft bytes and its recorded hash without asserting equality."""
+        try:
+            content = self._run_path(run_id, "draft.md").read_text(encoding="utf-8")
+            original_hash = self._run_path(run_id, "draft.sha256").read_text(encoding="utf-8").strip()
+        except FileNotFoundError as error:
+            raise ValidationError("Legacy draft was not found.") from error
+        except (OSError, UnicodeError) as error:
+            raise ValidationError("Legacy draft could not be read.") from error
+        return content, original_hash
+
+    def create_revision(self, record: RevisionRecord, content: str) -> None:
+        """Atomically create immutable revision content and metadata."""
+        if sha256_text(content) != record.content_hash:
+            raise IntegrityError("Revision content hash does not match its metadata.")
+        target = self._revision_path(record.run_id, record.revision_id)
+        if target.exists():
+            raise IntegrityError("Revision identifier collision.")
+        revisions_root = self._run_path(record.run_id, "revisions")
+        revisions_root.mkdir(parents=True, exist_ok=True)
+        temporary = Path(tempfile.mkdtemp(dir=revisions_root))
+        try:
+            self._atomic_write(temporary / "content.md", content)
+            self._atomic_write(temporary / "revision.json", json_dumps(asdict(record)))
+            temporary.replace(target)
+        finally:
+            if temporary.exists():
+                shutil.rmtree(temporary, ignore_errors=True)
+
+    def revision(self, run_id: str, revision_id: str) -> tuple[RevisionRecord, EditorialArtifact]:
+        """Read a revision and verify its metadata and immutable content hash."""
+        try:
+            serialized = self._revision_path(run_id, revision_id, "revision.json").read_text(encoding="utf-8")
+            content = self._revision_path(run_id, revision_id, "content.md").read_text(encoding="utf-8")
+            raw = cast(dict[str, object], json.loads(serialized))
+            parent_raw = cast(dict[str, object], raw["parent"])
+            parent = RevisionParent(
+                RevisionParentKind(cast(str, parent_raw["kind"])),
+                cast(str | None, parent_raw.get("revision_id")),
+                cast(str | None, parent_raw.get("content_hash")),
+                cast(bool, parent_raw["content_available"]),
+            )
+            record = RevisionRecord(
+                schema_version=cast(int, raw["schema_version"]),
+                revision_id=cast(str, raw["revision_id"]),
+                run_id=cast(str, raw["run_id"]),
+                content_hash=cast(str, raw["content_hash"]),
+                parent=parent,
+                author_type=cast(str, raw["author_type"]),
+                revision_kind=RevisionKind(cast(str, raw["revision_kind"])),
+                created_at=cast(str, raw["created_at"]),
+                note=cast(str | None, raw.get("note")),
+            )
+        except FileNotFoundError as error:
+            raise ValidationError("Revision was not found.") from error
+        except (OSError, UnicodeError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+            raise IntegrityError("Revision metadata is invalid.") from error
+        if record.run_id != run_id or record.revision_id != revision_id:
+            raise IntegrityError("Revision metadata does not match its path.")
+        artifact = EditorialArtifact(ArtifactKind.REVISION, revision_id, content, sha256_text(content))
+        if artifact.content_hash != record.content_hash:
+            raise IntegrityError("Revision content integrity check failed.")
+        return record, artifact
+
+    def revisions(self, run_id: str) -> list[RevisionRecord]:
+        """List validated revision metadata without returning revision content."""
+        root = self._run_path(run_id, "revisions")
+        if not root.exists():
+            return []
+        if root.is_symlink():
+            raise ValidationError("Path escapes the workspace or is a symlink.")
+        records: list[RevisionRecord] = []
+        for entry in root.iterdir():
+            if not entry.is_dir() or entry.is_symlink():
+                raise IntegrityError("Revision directory is invalid.")
+            record, _ = self.revision(run_id, entry.name)
+            records.append(record)
+        return sorted(records, key=lambda item: item.created_at)
 
     def transition_run(
         self,
@@ -478,6 +639,20 @@ class Workspace:
             raise IntegrityError("Run volume must be a positive integer when present.")
         return value
 
+    def chapter(self, run_id: str) -> int:
+        """Read the run chapter for title derivation without loading draft content."""
+        try:
+            payload = cast(
+                dict[str, object], json.loads(self._run_path(run_id, "run.json").read_text(encoding="utf-8"))
+            )
+            identity = cast(dict[str, object], payload["identity"])
+            chapter = identity.get("chapter")
+        except (OSError, UnicodeError, KeyError, TypeError, json.JSONDecodeError) as error:
+            raise IntegrityError("Run chapter must be an integer.") from error
+        if type(chapter) is not int:
+            raise IntegrityError("Run chapter must be an integer.")
+        return chapter
+
     def inspect_run(self, run_id: str, include_draft: bool = False) -> dict[str, object]:
         """Read validated run metadata and optionally its draft."""
         try:
@@ -511,6 +686,30 @@ class Workspace:
         with path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(asdict(event), ensure_ascii=False, sort_keys=True) + "\n")
 
+    def append_editorial_approval(self, event: EditorialApproval) -> None:
+        """Append a schema-v2 decision for an exact editorial artifact."""
+        path = self._safe(Path("editorial") / "approvals.jsonl")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(asdict(event), ensure_ascii=False, sort_keys=True) + "\n")
+
+    def approval_events(self, run_id: str) -> list[dict[str, object]]:
+        """Read append-only approval records for one run without rewriting legacy data."""
+        path = self._safe(Path("editorial") / "approvals.jsonl")
+        if not path.exists():
+            return []
+        events: list[dict[str, object]] = []
+        try:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                loaded: object = json.loads(line)
+                if isinstance(loaded, dict):
+                    raw = cast(dict[str, object], loaded)
+                    if raw.get("run_id") == run_id:
+                        events.append(raw)
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            raise IntegrityError("Approval events are invalid.") from error
+        return events
+
     def is_approved(self, run_id: str, draft_hash: str) -> bool:
         """Return the latest matching approval decision for a run and hash."""
         path = self._safe(Path("editorial") / "approvals.jsonl")
@@ -521,6 +720,27 @@ class Workspace:
                 if event["run_id"] == run_id and event["draft_hash"] == draft_hash:
                     latest = event
         return bool(latest and latest["approved"])
+
+    def is_artifact_approved(self, artifact: EditorialArtifact, run_id: str) -> bool:
+        """Return the latest approval decision for an exact artifact and hash."""
+        path = self._safe(Path("editorial") / "approvals.jsonl")
+        latest: dict[str, object] | None = None
+        if not path.exists():
+            return False
+        for line in path.read_text(encoding="utf-8").splitlines():
+            raw = cast(dict[str, object], json.loads(line))
+            if raw.get("run_id") != run_id:
+                continue
+            if raw.get("schema_version") == 2:
+                if (
+                    raw.get("artifact_kind") == artifact.kind
+                    and raw.get("artifact_id") == artifact.artifact_id
+                    and raw.get("content_hash") == artifact.content_hash
+                ):
+                    latest = raw
+            elif artifact.kind is ArtifactKind.GENERATED_DRAFT and raw.get("draft_hash") == artifact.content_hash:
+                latest = raw
+        return bool(latest and latest.get("approved"))
 
 
 class TranslationService:
@@ -675,12 +895,16 @@ class TranslationService:
             error.add_note(f"Could not persist terminal run state: {type(lifecycle_error).__name__}")
 
 
-def approve(workspace: Workspace, run_id: str, approved: bool = True) -> ApprovalEvent:
-    """Append the current approval decision for a complete draft."""
-    draft = workspace.draft(run_id)
-    event = ApprovalEvent(run_id, sha256_text(draft), approved, datetime.now(UTC).isoformat())
-    workspace.append_approval(event)
-    return event
+def approve(
+    workspace: Workspace,
+    run_id: str,
+    approved: bool = True,
+    revision_id: str | None = None,
+) -> EditorialApproval:
+    """Append a schema-v2 decision for a verified draft or selected revision."""
+    from novel_translator.editorial import approve_artifact
+
+    return approve_artifact(workspace, run_id, revision_id, approved)
 
 
 def export_draft(
@@ -690,45 +914,9 @@ def export_draft(
     title: str | None = None,
     overwrite: bool = False,
     publish_date: str | None = None,
+    revision_id: str | None = None,
 ) -> Path:
-    """Export an approved draft as Markdown without invoking publication tools."""
-    draft = workspace.draft(run_id)
-    draft_hash = sha256_text(draft)
-    if not workspace.is_approved(run_id, draft_hash):
-        raise ApprovalRequired("The current draft hash has not been approved.")
-    title = title or workspace.draft_title(run_id)
-    if title is None:
-        raise ValidationError("No draft title found; pass --title to export this run.")
-    if publish_date is None:
-        rendered_publish_date = date.today().isoformat()
-    else:
-        try:
-            rendered_publish_date = date.fromisoformat(publish_date).isoformat()
-        except ValueError as error:
-            raise ValidationError("publish_date must use the YYYY-MM-DD format.") from error
-    destination = destination.resolve()
-    volume = workspace.volume(run_id)
-    front_matter = [
-        "---",
-        f'chapterTitle: "{title}"',
-        f"publishDate: {rendered_publish_date}",
-    ]
-    if volume is not None:
-        front_matter.append(f"volume: {volume}")
-    rendered = "\n".join([*front_matter, "---", "", draft, ""])
-    if destination.exists() and destination.read_text(encoding="utf-8") != rendered and not overwrite:
-        raise CollisionRequired("Destination differs; pass explicit overwrite confirmation.")
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    backup = destination.with_suffix(destination.suffix + ".bak")
-    try:
-        if destination.exists():
-            shutil.copy2(destination, backup)
-        destination.write_text(rendered, encoding="utf-8")
-        return destination
-    except OSError:
-        if backup.exists():
-            backup.replace(destination)
-        raise
-    finally:
-        if backup.exists():
-            backup.unlink()
+    """Export an approved generated draft or explicit immutable revision."""
+    from novel_translator.editorial import export_artifact
+
+    return export_artifact(workspace, run_id, destination, revision_id, title, overwrite, publish_date)

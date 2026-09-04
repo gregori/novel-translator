@@ -23,6 +23,28 @@ class RunPhase(StrEnum):
     FINALIZATION = "finalization"
 
 
+class ArtifactKind(StrEnum):
+    """Artifacts that can be approved and exported."""
+
+    GENERATED_DRAFT = "generated_draft"
+    REVISION = "revision"
+
+
+class RevisionParentKind(StrEnum):
+    """The immutable artifact from which a revision was derived."""
+
+    GENERATED_DRAFT = "generated_draft"
+    REVISION = "revision"
+    UNAVAILABLE_GENERATED_DRAFT = "unavailable_generated_draft"
+
+
+class RevisionKind(StrEnum):
+    """How a human revision entered the editorial workflow."""
+
+    MANUAL = "manual"
+    LEGACY_PUBLISHED_SNAPSHOT = "legacy_published_snapshot"
+
+
 @dataclass(frozen=True, slots=True)
 class ChapterIdentity:
     """Canonical novel and chapter identity supplied by the CLI."""
@@ -77,3 +99,52 @@ class RunRecord:
     bible_version: str | None = None
     volume: int | None = None
     source_title: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RevisionParent:
+    """Hash-addressed parent reference stored with a revision."""
+
+    kind: RevisionParentKind
+    revision_id: str | None
+    content_hash: str | None
+    content_available: bool
+
+
+@dataclass(frozen=True, slots=True)
+class RevisionRecord:
+    """Immutable metadata for one human editorial revision."""
+
+    schema_version: int
+    revision_id: str
+    run_id: str
+    content_hash: str
+    parent: RevisionParent
+    author_type: str
+    revision_kind: RevisionKind
+    created_at: str
+    note: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class EditorialApproval:
+    """Schema-v2 append-only decision for one exact editorial artifact."""
+
+    schema_version: int
+    run_id: str
+    artifact_kind: ArtifactKind
+    artifact_id: str | None
+    content_hash: str
+    approved: bool
+    timestamp: str
+    reason: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class EditorialArtifact:
+    """Verified content and identity for one exportable editorial artifact."""
+
+    kind: ArtifactKind
+    artifact_id: str | None
+    content: str
+    content_hash: str

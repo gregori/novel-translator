@@ -25,6 +25,7 @@ from novel_translator.core import (
     extract_draft_title,
     load_bible,
     prompt_manifest_hash,
+    read_source,
     render_translation_prompt,
     segment_text,
 )
@@ -41,6 +42,60 @@ from novel_translator.shared.models import (
 from novel_translator.shared.utils import json_dumps, sha256_text
 
 VALID_RUN_ID = "0" * 32
+
+
+def test_read_source_extracts_only_kakuyomu_episode_content(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A Kakuyomu URL supplies only its episode title and body to translation."""
+    url = "https://kakuyomu.jp/works/123/episodes/456"
+    response = httpx.Response(
+        200,
+        request=httpx.Request("GET", url),
+        text="""
+        <html><head><title>Episode - Work - Kakuyomu</title></head><body>
+          <nav>Navigation must not reach the model.</nav>
+          <p class="widget-episodeTitle js-vertical-composition-item">第31話　帰宅、そして……</p>
+          <div class="widget-episodeBody js-episode-body">
+            <p>　電車が運休した。</p>
+            <p class="blank"><br /></p>
+            <p>　<ruby><rb>勉</rb><rp>（</rp><rt>つとむ</rt><rp>）</rp></ruby>は帰宅した。</p>
+          </div>
+          <footer>Footer must not reach the model.</footer>
+        </body></html>
+        """,
+    )
+    get = Mock(return_value=response)
+    monkeypatch.setattr(httpx, "get", get)
+
+    source = read_source(url)
+
+    assert source == SourceDocument(
+        "第31話　帰宅、そして……\n\n　電車が運休した。\n\n　勉（つとむ）は帰宅した。",
+        url,
+        "第31話　帰宅、そして……",
+    )
+    get.assert_called_once_with(url, timeout=120.0, follow_redirects=True)
+
+
+def test_read_source_rejects_non_kakuyomu_hostname() -> None:
+    """A hostname containing Kakuyomu's name cannot bypass source validation."""
+    with pytest.raises(ValidationError, match="Only Kakuyomu URLs"):
+        read_source("https://kakuyomu.jp.example.test/works/123/episodes/456")
+
+
+def test_read_source_rejects_kakuyomu_page_without_episode_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Layout changes fail safely instead of sending the whole page to the model."""
+    url = "https://kakuyomu.jp/works/123/episodes/456"
+    response = httpx.Response(
+        200,
+        request=httpx.Request("GET", url),
+        text="<html><body><nav>Only navigation</nav></body></html>",
+    )
+    monkeypatch.setattr(httpx, "get", Mock(return_value=response))
+
+    with pytest.raises(ValidationError, match="episode title and body"):
+        read_source(url)
 
 
 @given(st.lists(st.text(max_size=20), min_size=1, max_size=20).map("\n".join))
@@ -258,11 +313,12 @@ def test_extract_draft_title_ignores_unmatched_heading() -> None:
 
 
 def test_export_uses_an_inferred_draft_title(tmp_path: Path) -> None:
-    """Export uses a matching draft heading when no explicit title is supplied."""
+    """Export strips bold Markdown from an inferred draft heading."""
     workspace = Workspace(tmp_path)
     run_dir = tmp_path / "runs" / VALID_RUN_ID
     run_dir.mkdir(parents=True)
-    (run_dir / "draft.md").write_text("Episode 7: Rainy Day\n\nDraft", encoding="utf-8")
+    (run_dir / "draft.md").write_text("**Episode 7: Rainy Day**\n\nDraft", encoding="utf-8")
+    (run_dir / "draft.sha256").write_text(sha256_text("**Episode 7: Rainy Day**\n\nDraft"), encoding="utf-8")
     (run_dir / "run.json").write_text('{"identity": {"chapter": 7}}', encoding="utf-8")
     approve(workspace, VALID_RUN_ID)
 
@@ -470,6 +526,7 @@ def test_workspace_requires_current_approval_for_export(
     run_dir = tmp_path / "runs" / VALID_RUN_ID
     run_dir.mkdir(parents=True)
     (run_dir / "draft.md").write_text("Draft", encoding="utf-8")
+    (run_dir / "draft.sha256").write_text(sha256_text("Draft"), encoding="utf-8")
     with pytest.raises(ApprovalRequired):
         export_draft(workspace, VALID_RUN_ID, tmp_path / "out.md", "Title")
 
@@ -502,6 +559,7 @@ def test_export_uses_volume_persisted_in_run_metadata(tmp_path: Path) -> None:
     run_dir = tmp_path / "runs" / VALID_RUN_ID
     run_dir.mkdir(parents=True)
     (run_dir / "draft.md").write_text("Draft", encoding="utf-8")
+    (run_dir / "draft.sha256").write_text(sha256_text("Draft"), encoding="utf-8")
     (run_dir / "run.json").write_text('{"volume": 2}', encoding="utf-8")
     approve(workspace, VALID_RUN_ID)
 

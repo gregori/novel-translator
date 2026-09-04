@@ -31,12 +31,15 @@ Variáveis já definidas no PowerShell ou no gerenciador de segredos do sistema 
 
 ```powershell
 novel-translator translate --novel minha-novel --chapter 1 --volume 1 --source chapter-ja.txt --bible config/translation-bible.example.yaml --provider opencode-go
+novel-translator translate --novel minha-novel --chapter 2 --source https://kakuyomu.jp/works/WORK_ID/episodes/EPISODE_ID --bible config/translation-bible.example.yaml --provider opencode-go
 novel-translator approve RUN_ID
 novel-translator export RUN_ID --destination ../novels-site/src/content/novels/minha-novel/001.md
 novel-translator inspect RUN_ID
 ```
 
 `--volume` é opcional. Quando informado, deve ser inteiro positivo; ele é salvo no `run.json` e incluído como `volume` no front matter do Markdown exportado.
+
+`--source` aceita um arquivo UTF-8 ou a URL de um episódio do Kakuyomu. Para URLs, somente o título do episódio (`.widget-episodeTitle`) e o corpo (`.js-episode-body`) são enviados ao modelo; navegação, rodapé e demais elementos da página são descartados.
 
 O export usa o título do episódio detectado no draft. Use `--title "Título"` somente para substituí-lo explicitamente. O front matter inclui `publishDate` com a data da exportação; use `--publish-date YYYY-MM-DD` para informar a data original do capítulo. O `draft.md` permanece o texto cru da tradução; o front matter é criado apenas no arquivo exportado.
 

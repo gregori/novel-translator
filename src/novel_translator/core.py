@@ -17,6 +17,7 @@ from html.parser import HTMLParser
 from math import ceil
 from pathlib import Path
 from typing import Any, Final, Protocol, cast
+from urllib.parse import urlsplit
 
 import httpx
 import yaml
@@ -51,37 +52,75 @@ TERMINAL_RUN_STATUSES: Final[frozenset[RunStatus]] = frozenset(
 )
 
 
-class PageTitleParser(HTMLParser):
-    """Extract the Open Graph or document title from a fetched HTML page."""
+class KakuyomuEpisodeParser(HTMLParser):
+    """Extract the episode title and body from a Kakuyomu HTML page."""
 
     def __init__(self) -> None:
         super().__init__()
-        self.open_graph_title: str | None = None
-        self.document_title: list[str] = []
-        self._inside_title = False
+        self._title_depth = 0
+        self._body_depth = 0
+        self._paragraph_depth = 0
+        self._title_parts: list[str] = []
+        self._paragraph_parts: list[str] = []
+        self._paragraphs: list[str] = []
+
+    @staticmethod
+    def _classes(attrs: list[tuple[str, str | None]]) -> set[str]:
+        """Return the class tokens from one start tag."""
+        class_value = dict(attrs).get("class") or ""
+        return set(class_value.split())
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        """Track title-bearing tags."""
-        attributes = dict(attrs)
-        if tag == "meta" and attributes.get("property") == "og:title":
-            self.open_graph_title = attributes.get("content")
-        if tag == "title":
-            self._inside_title = True
+        """Enter the selected title, body, and body paragraphs."""
+        classes = self._classes(attrs)
+        if self._body_depth:
+            if tag == "br":
+                if self._paragraph_depth:
+                    self._paragraph_parts.append("\n")
+                return
+            self._body_depth += 1
+            if tag == "p" and not self._paragraph_depth:
+                self._paragraph_depth = self._body_depth
+                self._paragraph_parts = []
+            return
+        if "js-episode-body" in classes:
+            self._body_depth = 1
+            return
+        if self._title_depth:
+            self._title_depth += 1
+        elif "widget-episodeTitle" in classes:
+            self._title_depth = 1
 
     def handle_endtag(self, tag: str) -> None:
-        """Stop collecting document-title text."""
-        if tag == "title":
-            self._inside_title = False
+        """Leave selected elements and finish body paragraphs."""
+        if tag == "br":
+            return
+        if self._body_depth:
+            if tag == "p" and self._paragraph_depth == self._body_depth:
+                paragraph = "".join(self._paragraph_parts).rstrip("\r\n")
+                self._paragraphs.append(paragraph if paragraph.strip() else "")
+                self._paragraph_depth = 0
+                self._paragraph_parts = []
+            self._body_depth -= 1
+        elif self._title_depth:
+            self._title_depth -= 1
 
     def handle_data(self, data: str) -> None:
-        """Collect plain text within a document title."""
-        if self._inside_title:
-            self.document_title.append(data)
+        """Collect text only from the selected episode elements."""
+        if self._body_depth and self._paragraph_depth:
+            self._paragraph_parts.append(data)
+        elif self._title_depth:
+            self._title_parts.append(data)
 
     def title(self) -> str | None:
-        """Return a non-empty preferred page title."""
-        candidate = self.open_graph_title or "".join(self.document_title)
+        """Return the non-empty episode title when present."""
+        candidate = "".join(self._title_parts)
         return candidate.strip() or None
+
+    def body(self) -> str | None:
+        """Return the episode paragraphs with their blank-line structure."""
+        candidate = "\n".join(self._paragraphs).strip("\r\n")
+        return candidate if candidate.strip() else None
 
 
 class BibleCharacter(BaseModel):
@@ -155,16 +194,21 @@ def load_bible(path: Path) -> TranslationBible:
 def read_source(value: str) -> SourceDocument:
     """Read a local UTF-8 file or supported Kakuyomu URL."""
     if value.startswith(("http://", "https://")):
-        if "kakuyomu.jp" not in value:
+        if urlsplit(value).hostname != "kakuyomu.jp":
             raise ValidationError("Only Kakuyomu URLs are supported in v1.")
-        response = httpx.get(value, timeout=120.0)
-        response.raise_for_status()
-        title_parser = PageTitleParser()
-        title_parser.feed(response.text)
-        text = re.sub(r"<[^>]+>", "", response.text).strip()
-        if not text:
-            raise ValidationError("Kakuyomu page did not contain readable text.")
-        return SourceDocument(text, value, title_parser.title())
+        try:
+            response = httpx.get(value, timeout=120.0, follow_redirects=True)
+            response.raise_for_status()
+        except httpx.HTTPError as error:
+            raise ValidationError(f"Could not download Kakuyomu source: {type(error).__name__}.") from error
+        parser = KakuyomuEpisodeParser()
+        parser.feed(response.text)
+        parser.close()
+        title = parser.title()
+        body = parser.body()
+        if title is None or body is None:
+            raise ValidationError("Kakuyomu page did not contain an episode title and body.")
+        return SourceDocument(f"{title}\n\n{body}", value, title)
     path = Path(value)
     if not path.is_file():
         raise ValidationError("Source must be a readable file or Kakuyomu URL.")

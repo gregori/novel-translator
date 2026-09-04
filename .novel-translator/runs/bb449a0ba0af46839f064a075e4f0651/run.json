@@ -1,0 +1,48 @@
+{
+  "bible_hash": "fd7209bf8a7e65b835d448019b987a70cfa88c064feccb449d66bce5a016c3a8",
+  "bible_version": "chapters-01-26",
+  "character_counts": {
+    "draft": 9973,
+    "source": 12642
+  },
+  "completed_at": "2026-09-03T22:15:22.489468+00:00",
+  "context_hash": "51e813cb8fcd905861018e2293328c88765f529b0790f0aabc1a0b3e85b0f338",
+  "draft_title": null,
+  "duration_seconds": 970.22,
+  "identity": {
+    "chapter": 30,
+    "novel": "gariben-kun-to-uraaka-san"
+  },
+  "model": "glm-5.3-flash",
+  "prompt_hash": "c7830df3ec2bf2cca2aaa1437028551223ffc9ef0b3b4f62cfac208d3ef48cb0",
+  "prompt_template_hash": "fd29b0e309764333a600a2e048773d97dcd8bb15c878b482a92d538cd83fc2fa",
+  "prompt_template_version": "v1",
+  "prompt_version": "v1",
+  "provider": "opencode-go",
+  "run_id": "bb449a0ba0af46839f064a075e4f0651",
+  "schema_version": 2,
+  "segment_manifest": [
+    {
+      "continuity_context_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gateway_calls": [
+        {
+          "attempt": 1,
+          "rendered_prompt_hash": "06177494f810e972025cfba1e865fa9491b72012969c2981b7b0d4930734a091"
+        }
+      ],
+      "rendered_prompt_hash": "06177494f810e972025cfba1e865fa9491b72012969c2981b7b0d4930734a091",
+      "segment_index": 1,
+      "source_segment_hash": "7f96a0ff601a4b415d55816bcdaddf2b6a369d8fa4b6cbfa78c8f154fd62cbe8"
+    }
+  ],
+  "source_hash": "7f96a0ff601a4b415d55816bcdaddf2b6a369d8fa4b6cbfa78c8f154fd62cbe8",
+  "source_title": "第30話　素直に頷けない茉莉花の提案 - 【ＷＥＢ版】ガリ勉くんと裏アカさん　～散々お世話になっているエロ系裏垢女子の正体がクラスのアイドルだった件～（鈴木えんぺら＠『ガリ勉くんと裏アカさん』） - カクヨム",
+  "status": "draft_completed",
+  "timestamp": "2026-09-03T21:59:12.269716+00:00",
+  "token_estimates": {
+    "draft": 2494,
+    "method": "characters_per_token: ja=1, other_languages=4",
+    "source": 12642
+  },
+  "volume": 3
+}

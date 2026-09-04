@@ -1,0 +1,48 @@
+{
+  "bible_hash": "fd7209bf8a7e65b835d448019b987a70cfa88c064feccb449d66bce5a016c3a8",
+  "bible_version": "chapters-01-26",
+  "character_counts": {
+    "draft": 8469,
+    "source": 12216
+  },
+  "completed_at": "2026-09-04T00:42:22.156274+00:00",
+  "context_hash": "51e813cb8fcd905861018e2293328c88765f529b0790f0aabc1a0b3e85b0f338",
+  "draft_title": "Chapter 31: Returning Home, And...",
+  "duration_seconds": 82.304,
+  "identity": {
+    "chapter": 31,
+    "novel": "gariben-kun-to-uraaka-san"
+  },
+  "model": "deepseek-v4-flash",
+  "prompt_hash": "dc080696bca71e0676c4263d5f89cd33495392d70c24c27765c3db29a9832f71",
+  "prompt_template_hash": "fd29b0e309764333a600a2e048773d97dcd8bb15c878b482a92d538cd83fc2fa",
+  "prompt_template_version": "v1",
+  "prompt_version": "v1",
+  "provider": "opencode-go",
+  "run_id": "2c0ed39c4d6b4189ad8d35be5cf8a25a",
+  "schema_version": 2,
+  "segment_manifest": [
+    {
+      "continuity_context_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gateway_calls": [
+        {
+          "attempt": 1,
+          "rendered_prompt_hash": "527f39e387918f844f7d0bd907783ffcd809fd2748df7a8c4167bf9c7279b69d"
+        }
+      ],
+      "rendered_prompt_hash": "527f39e387918f844f7d0bd907783ffcd809fd2748df7a8c4167bf9c7279b69d",
+      "segment_index": 1,
+      "source_segment_hash": "b929f95447429d0bc5b353edb821ca96d49dc45c51eb987f5b63e789a87ce42d"
+    }
+  ],
+  "source_hash": "b929f95447429d0bc5b353edb821ca96d49dc45c51eb987f5b63e789a87ce42d",
+  "source_title": "第31話　帰宅、そして…… - 【ＷＥＢ版】ガリ勉くんと裏アカさん　～散々お世話になっているエロ系裏垢女子の正体がクラスのアイドルだった件～（鈴木えんぺら＠『ガリ勉くんと裏アカさん』） - カクヨム",
+  "status": "draft_completed",
+  "timestamp": "2026-09-04T00:40:59.852053+00:00",
+  "token_estimates": {
+    "draft": 2118,
+    "method": "characters_per_token: ja=1, other_languages=4",
+    "source": 12216
+  },
+  "volume": 3
+}

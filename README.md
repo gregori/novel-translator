@@ -45,6 +45,28 @@ O export usa o título do episódio detectado no draft. Use `--title "Título"` 
 
 Durante a tradução, a CLI informa o segmento e a tentativa em andamento. Por padrão, um capítulo de até 60.000 caracteres é enviado em uma única chamada. Capítulos maiores são divididos por parágrafos; cada segmento posterior recebe os últimos 12.000 caracteres da tradução anterior somente como contexto de continuidade. Ajuste o limite com `--segment-limit CARACTERES`. Cada chamada ao provedor tem um prazo total de 90 segundos por padrão; ajuste-o com `--request-timeout SEGUNDOS`.
 
+## Revisão editorial
+
+Nunca edite `draft.md` diretamente: ele é a saída imutável do modelo e seu hash é validado antes de aprovar ou exportar. Para editar um capítulo, crie uma revisão completa e imutável:
+
+```powershell
+novel-translator revise RUN_ID --input reviewed.md --note "Correções editoriais"
+novel-translator revise RUN_ID --input reviewed-v2.md --parent REVISION_ID
+novel-translator diff RUN_ID --revision REVISION_ID
+novel-translator approve RUN_ID --revision REVISION_ID
+novel-translator export RUN_ID --revision REVISION_ID --destination ../novels-site/src/content/novels/minha-novel/001.md
+```
+
+A primeira revisão referencia o draft gerado. Revisões posteriores exigem `--parent`; o sistema nunca escolhe a revisão mais recente automaticamente. Aprovações e exportações são vinculadas ao hash exato do artefato selecionado.
+
+Para capítulos legados cujo `draft.md` foi editado antes desse fluxo, crie explicitamente um snapshot publicado:
+
+```powershell
+novel-translator migrate-legacy-draft RUN_ID --as-published --note "Published chapter 27"
+```
+
+Quando o hash de `draft.md` divergir de `draft.sha256`, o conteúdo gerado original é marcado como indisponível. O sistema não o reconstrói e diffs históricos contra ele não podem ser calculados. Execute a migração uma vez para cada run publicado dos capítulos 27–31 listado na issue #22.
+
 ## Proveniência dos prompts
 
 Runs novos usam `schema_version: 2`. Runs antigos, sem esse campo, continuam

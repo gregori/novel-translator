@@ -313,11 +313,12 @@ def test_extract_draft_title_ignores_unmatched_heading() -> None:
 
 
 def test_export_uses_an_inferred_draft_title(tmp_path: Path) -> None:
-    """Export uses a matching draft heading when no explicit title is supplied."""
+    """Export strips bold Markdown from an inferred draft heading."""
     workspace = Workspace(tmp_path)
     run_dir = tmp_path / "runs" / VALID_RUN_ID
     run_dir.mkdir(parents=True)
-    (run_dir / "draft.md").write_text("Episode 7: Rainy Day\n\nDraft", encoding="utf-8")
+    (run_dir / "draft.md").write_text("**Episode 7: Rainy Day**\n\nDraft", encoding="utf-8")
+    (run_dir / "draft.sha256").write_text(sha256_text("**Episode 7: Rainy Day**\n\nDraft"), encoding="utf-8")
     (run_dir / "run.json").write_text('{"identity": {"chapter": 7}}', encoding="utf-8")
     approve(workspace, VALID_RUN_ID)
 
@@ -525,6 +526,7 @@ def test_workspace_requires_current_approval_for_export(
     run_dir = tmp_path / "runs" / VALID_RUN_ID
     run_dir.mkdir(parents=True)
     (run_dir / "draft.md").write_text("Draft", encoding="utf-8")
+    (run_dir / "draft.sha256").write_text(sha256_text("Draft"), encoding="utf-8")
     with pytest.raises(ApprovalRequired):
         export_draft(workspace, VALID_RUN_ID, tmp_path / "out.md", "Title")
 
@@ -557,6 +559,7 @@ def test_export_uses_volume_persisted_in_run_metadata(tmp_path: Path) -> None:
     run_dir = tmp_path / "runs" / VALID_RUN_ID
     run_dir.mkdir(parents=True)
     (run_dir / "draft.md").write_text("Draft", encoding="utf-8")
+    (run_dir / "draft.sha256").write_text(sha256_text("Draft"), encoding="utf-8")
     (run_dir / "run.json").write_text('{"volume": 2}', encoding="utf-8")
     approve(workspace, VALID_RUN_ID)
 

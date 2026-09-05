@@ -1,0 +1,16 @@
+{
+  "author_type": "human",
+  "content_hash": "d223713601682919d01933be65b7815d57ea1bdf2c0a8bf35286e9b8490b89f2",
+  "created_at": "2026-09-05T00:07:56.973161+00:00",
+  "note": "Published chapter 31",
+  "parent": {
+    "content_available": false,
+    "content_hash": "dc8fa44ac18cefda688c7fa1aaa3d1236700381a16e469dacf0a12b1415f5239",
+    "kind": "unavailable_generated_draft",
+    "revision_id": null
+  },
+  "revision_id": "52090f1d9b9b48bf8b1dac257eb5dc2e",
+  "revision_kind": "legacy_published_snapshot",
+  "run_id": "2c0ed39c4d6b4189ad8d35be5cf8a25a",
+  "schema_version": 1
+}

@@ -12,12 +12,48 @@ from novel_translator.infrastructure.providers import ProviderSelection
 
 VALID_RUN_ID = "a" * 32
 
+CATALOG_YAML = """novels:
+  novel:
+    title: Test Novel
+    bible: bible.yaml
+    source_directory: sources
+    export:
+      repository: gregori/novels-site
+      directory: src/content/novels/novel
+      filename_template: "{chapter:03}.md"
+    translation:
+      provider: opencode-go
+      model: catalog-model
+      default_volume: 2
+"""
+
+
+def create_catalog(tmp_path: Path, *, ambiguous_source: bool = False) -> Path:
+    """Register one novel with a configured chapter source."""
+    sources = tmp_path / "sources"
+    sources.mkdir(exist_ok=True)
+    (sources / "chapter-1.md").write_text("source", encoding="utf-8")
+    if ambiguous_source:
+        (sources / "chapter-1.txt").write_text("alternate", encoding="utf-8")
+    bible = tmp_path / "bible.yaml"
+    bible.write_text("title: Novel\n", encoding="utf-8")
+    config = tmp_path / "novels.yaml"
+    config.write_text(CATALOG_YAML, encoding="utf-8")
+    return config
+
 
 def test_cli_lists_commands() -> None:
-    """The local CLI exposes its four workflows."""
+    """The CLI exposes catalog, translation, and editorial workflows."""
     result = CliRunner().invoke(app, ["--help"])
     assert result.exit_code == 0
-    for command in ("translate", "approve", "export", "inspect"):
+    for command in (
+        "novels",
+        "chapters",
+        "translate",
+        "approve",
+        "export",
+        "inspect",
+    ):
         assert command in result.output
 
 
@@ -50,10 +86,7 @@ def test_translate_rejects_unknown_provider_before_creating_run(
     tmp_path,
 ) -> None:
     """Provider validation happens before the workspace or run is created."""
-    source = tmp_path / "source.txt"
-    source.write_text("source", encoding="utf-8")
-    bible = tmp_path / "bible.yaml"
-    bible.write_text("title: Novel\n", encoding="utf-8")
+    config = create_catalog(tmp_path)
     workspace = tmp_path / "workspace"
 
     result = CliRunner().invoke(
@@ -64,16 +97,12 @@ def test_translate_rejects_unknown_provider_before_creating_run(
             "novel",
             "--chapter",
             "1",
-            "--source",
-            str(source),
-            "--bible",
-            str(bible),
+            "--config",
+            str(config),
             "--workspace",
             str(workspace),
             "--base-url",
             "https://example.test/v1",
-            "--model",
-            "model",
             "--api-key",
             "secret",
             "--provider",
@@ -91,10 +120,7 @@ def test_translate_records_resolved_provider_and_model(
 ) -> None:
     """Run metadata uses the provider and model
     attached to the selected adapter."""
-    source = tmp_path / "source.txt"
-    source.write_text("source", encoding="utf-8")
-    bible = tmp_path / "bible.yaml"
-    bible.write_text("title: Novel\n", encoding="utf-8")
+    config = create_catalog(tmp_path)
     workspace = tmp_path / "workspace"
     gateway = Mock()
     gateway.translate.return_value = "translated"
@@ -111,10 +137,8 @@ def test_translate_records_resolved_provider_and_model(
             "novel",
             "--chapter",
             "1",
-            "--source",
-            str(source),
-            "--bible",
-            str(bible),
+            "--config",
+            str(config),
             "--workspace",
             str(workspace),
             "--base-url",
@@ -131,6 +155,47 @@ def test_translate_records_resolved_provider_and_model(
     metadata = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
     assert metadata["provider"] == "opencode-go"
     assert metadata["model"] == "resolved-model"
+    assert metadata["identity"]["novel"] == "novel"
+    assert metadata["volume"] == 2
+
+
+def test_translate_explicit_source_ignores_configured_ambiguity(
+    tmp_path, monkeypatch
+) -> None:
+    """--source bypasses a configured source ambiguity entirely."""
+    config = create_catalog(tmp_path, ambiguous_source=True)
+    workspace = tmp_path / "workspace"
+    custom = tmp_path / "custom.txt"
+    custom.write_text("custom source", encoding="utf-8")
+    gateway = Mock()
+    gateway.translate.return_value = "translated"
+    monkeypatch.setattr(
+        "novel_translator.cli.app.resolve_provider",
+        lambda *_: ProviderSelection("opencode-go", "resolved-model", gateway),
+    )
+    runner = CliRunner()
+    common = [
+        "translate",
+        "--novel",
+        "novel",
+        "--chapter",
+        "1",
+        "--config",
+        str(config),
+        "--workspace",
+        str(workspace),
+        "--base-url",
+        "https://example.test/v1",
+        "--api-key",
+        "secret",
+    ]
+
+    ambiguous = runner.invoke(app, common)
+    explicit = runner.invoke(app, [*common, "--source", str(custom)])
+
+    assert ambiguous.exit_code == 2
+    assert "Multiple source candidates exist" in ambiguous.output
+    assert explicit.exit_code == 0
 
 
 def create_inspect_run(workspace: Path) -> None:

@@ -35,7 +35,7 @@ def _create_revision(
         raise ValidationError("Revision content must not be empty.")
     if parent is None:
         if parent_revision_id is None:
-            if workspace.revisions.revisions(run_id):
+            if workspace.revisions.revision_records(run_id):
                 raise ValidationError(
                     "Specify --parent when the run already has revisions."
                 )
@@ -136,7 +136,7 @@ def _migrate_legacy_draft(
     content_hash = sha256_text(content)
     existing = [
         record
-        for record in workspace.revisions.revisions(run_id)
+        for record in workspace.revisions.revision_records(run_id)
         if record.revision_kind is RevisionKind.LEGACY_PUBLISHED_SNAPSHOT
     ]
     if existing:
@@ -272,20 +272,23 @@ class ListRevisions:
         self, request: ListRevisionsInput
     ) -> tuple[RevisionSummary, ...]:
         """Return content-free revision summaries."""
-        summaries: list[RevisionSummary] = []
-        for record in self._workspace.revisions.revisions(request.run_id):
-            _, artifact = self._workspace.revisions.revision(
-                request.run_id, record.revision_id
-            )
-            summaries.append(
-                RevisionSummary(
-                    record,
-                    self._workspace.approvals.is_artifact_approved(
-                        artifact, request.run_id
+        records = self._workspace.revisions.revision_records(request.run_id)
+        approvals = self._workspace.approvals.latest_approvals(request.run_id)
+        return tuple(
+            RevisionSummary(
+                record,
+                approvals.get(
+                    (
+                        ArtifactKind.REVISION,
+                        record.revision_id,
+                        record.content_hash,
                     ),
+                    False,
                 )
+                is True,
             )
-        return tuple(summaries)
+            for record in records
+        )
 
 
 class MigrateLegacyDraft:

@@ -54,23 +54,39 @@ def install_mock_provider(
     )
 
 
-def translation_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
-    """Create source, bible, and workspace paths for one CLI translation."""
-    source = tmp_path / "source.txt"
-    source.write_text("日本語", encoding="utf-8")
+def translation_inputs(tmp_path: Path) -> tuple[Path, Path]:
+    """Create a registered catalog and workspace for one CLI translation."""
+    sources = tmp_path / "sources"
+    sources.mkdir()
+    (sources / "chapter-1.txt").write_text("日本語", encoding="utf-8")
     bible = tmp_path / "bible.yaml"
     bible.write_text("title: Test Novel\n", encoding="utf-8")
-    return source, bible, tmp_path / "workspace"
+    config = tmp_path / "novels.yaml"
+    config.write_text(
+        "novels:\n"
+        "  test-novel:\n"
+        "    title: Test Novel\n"
+        "    bible: bible.yaml\n"
+        "    source_directory: sources\n"
+        "    export:\n"
+        "      repository: gregori/novels-site\n"
+        "      directory: src/content/novels/test-novel\n"
+        '      filename_template: "{chapter:03}.md"\n'
+        "    translation:\n"
+        "      provider: opencode-go\n"
+        "      model: test-model\n",
+        encoding="utf-8",
+    )
+    return config, tmp_path / "workspace"
 
 
 def invoke_translate(
     runner: CliRunner,
-    source: Path,
-    bible: Path,
+    config: Path,
     workspace: Path,
     *extra_args: str,
 ) -> Result:
-    """Invoke translate with deterministic local provider settings."""
+    """Invoke the configured translation flow deterministically."""
     return runner.invoke(
         app,
         [
@@ -79,16 +95,12 @@ def invoke_translate(
             "test-novel",
             "--chapter",
             "1",
-            "--source",
-            str(source),
-            "--bible",
-            str(bible),
+            "--config",
+            str(config),
             "--workspace",
             str(workspace),
             "--base-url",
             "https://provider.test/v1",
-            "--model",
-            "test-model",
             "--api-key",
             "test-secret",
             "--json",
@@ -108,10 +120,10 @@ def test_complete_translate_approve_export_inspect_workflow(
         return completion_response()
 
     install_mock_provider(monkeypatch, httpx2.MockTransport(handle_request))
-    source, bible, workspace = translation_inputs(tmp_path)
+    config, workspace = translation_inputs(tmp_path)
     runner = CliRunner()
 
-    translated = invoke_translate(runner, source, bible, workspace)
+    translated = invoke_translate(runner, config, workspace)
     assert translated.exit_code == 0
     run_id = json.loads(translated.stdout)["run_id"]
 
@@ -166,9 +178,9 @@ def test_translate_reports_provider_http_error(
         )
     )
     install_mock_provider(monkeypatch, transport)
-    source, bible, workspace = translation_inputs(tmp_path)
+    config, workspace = translation_inputs(tmp_path)
 
-    result = invoke_translate(CliRunner(), source, bible, workspace)
+    result = invoke_translate(CliRunner(), config, workspace)
 
     assert result.exit_code == 2
     assert "HTTP 503: Provider unavailable" in result.output
@@ -186,12 +198,11 @@ def test_translate_reports_total_timeout(
         return completion_response()
 
     install_mock_provider(monkeypatch, httpx2.MockTransport(delayed_response))
-    source, bible, workspace = translation_inputs(tmp_path)
+    config, workspace = translation_inputs(tmp_path)
     try:
         result = invoke_translate(
             CliRunner(),
-            source,
-            bible,
+            config,
             workspace,
             "--request-timeout",
             "1",
@@ -212,9 +223,9 @@ def test_export_without_approval_is_rejected(
     install_mock_provider(
         monkeypatch, httpx2.MockTransport(lambda _: completion_response())
     )
-    source, bible, workspace = translation_inputs(tmp_path)
+    config, workspace = translation_inputs(tmp_path)
     runner = CliRunner()
-    translated = invoke_translate(runner, source, bible, workspace)
+    translated = invoke_translate(runner, config, workspace)
     run_id = json.loads(translated.stdout)["run_id"]
 
     result = runner.invoke(
@@ -232,3 +243,55 @@ def test_export_without_approval_is_rejected(
     assert result.exit_code == 2
     assert "has not been approved" in result.output
     assert "Traceback" not in result.output
+
+
+def test_export_uses_configured_destination_inside_site_checkout(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Configured export requires an explicit checkout root to write."""
+    install_mock_provider(
+        monkeypatch, httpx2.MockTransport(lambda _: completion_response())
+    )
+    config, workspace = translation_inputs(tmp_path)
+    runner = CliRunner()
+    translated = invoke_translate(runner, config, workspace)
+    assert translated.exit_code == 0
+    approved = runner.invoke(
+        app,
+        [
+            "approve",
+            "--novel",
+            "test-novel",
+            "--chapter",
+            "1",
+            "--config",
+            str(config),
+            "--workspace",
+            str(workspace),
+        ],
+    )
+    assert approved.exit_code == 0
+    site_root = tmp_path / "novels-site"
+    site_root.mkdir()
+    common = [
+        "export",
+        "--novel",
+        "test-novel",
+        "--chapter",
+        "1",
+        "--config",
+        str(config),
+        "--workspace",
+        str(workspace),
+    ]
+
+    without_root = runner.invoke(app, common)
+    with_root = runner.invoke(app, [*common, "--site-root", str(site_root)])
+
+    assert without_root.exit_code == 2
+    assert "checkout root" in without_root.output
+    assert with_root.exit_code == 0
+    exported = site_root / "src" / "content" / "novels" / "test-novel"
+    assert "Translated body." in (exported / "001.md").read_text(
+        encoding="utf-8"
+    )

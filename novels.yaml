@@ -1,0 +1,16 @@
+novels:
+  gariben:
+    title: The Studious Boy and the Secret Account Girl
+    run_aliases:
+      - gariben-kun-to-uraaka-san
+    bible: config/gariben-kun-to-uraaka-san.translation-bible.yaml
+    source_directory: novel-sources/gariben-kun-to-uraaka-san
+    kakuyomu_episode_root: https://kakuyomu.jp/works/16816452220316242482/episodes
+    export:
+      repository: gregori/novels-site
+      directory: src/content/novels/gariben
+      filename_template: "{chapter:03}.md"
+    translation:
+      provider: opencode-go
+      model: glm-5.3-flash
+      default_volume: 3

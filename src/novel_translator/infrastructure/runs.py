@@ -1,6 +1,7 @@
 """Filesystem repository for translation runs and generated drafts."""
 
 import json
+import re
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -24,6 +25,8 @@ from novel_translator.domain.translation import (
 )
 from novel_translator.infrastructure.filesystem import WorkspaceStorage
 from novel_translator.shared.utils import json_dumps, sha256_text
+
+_SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 
 TERMINAL_RUN_STATUSES = frozenset(
     {RunStatus.DRAFT_COMPLETED, RunStatus.FAILED, RunStatus.INTERRUPTED}
@@ -117,6 +120,26 @@ class RunRepository:
         return EditorialArtifact(
             ArtifactKind.GENERATED_DRAFT, None, content, actual_hash
         )
+
+    def recorded_draft_hash(self, run_id: str) -> str:
+        """Read the persisted draft hash without loading draft content."""
+        try:
+            recorded = (
+                self._storage.run_path(run_id, "draft.sha256")
+                .read_text(encoding="utf-8")
+                .strip()
+            )
+        except FileNotFoundError as error:
+            raise IntegrityError(
+                "Recorded draft hash is unavailable."
+            ) from error
+        except (OSError, UnicodeError) as error:
+            raise IntegrityError(
+                "Recorded draft hash could not be read."
+            ) from error
+        if _SHA256_PATTERN.fullmatch(recorded) is None:
+            raise IntegrityError("Recorded draft hash is invalid.")
+        return recorded
 
     def legacy_draft_snapshot(self, run_id: str) -> tuple[str, str]:
         """Read legacy draft bytes and its recorded hash, unverified."""

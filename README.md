@@ -20,22 +20,68 @@ Copy-Item .env.example .env
 | Variável | Obrigatória | Finalidade |
 |---|---:|---|
 | `NOVEL_TRANSLATOR_BASE_URL` | Sim | URL-base do endpoint OpenAI-compatible, incluindo o prefixo necessário, como `/v1`. |
-| `NOVEL_TRANSLATOR_MODEL` | Sim | Identificador do modelo enviado ao endpoint. |
+| `NOVEL_TRANSLATOR_MODEL` | Não | Substitui o modelo padrão da novel selecionada. |
 | `NOVEL_TRANSLATOR_API_KEY` | Sim | Chave de API enviada como Bearer token; nunca a grave em YAML, commits ou artefatos de run. |
 
 Também é possível informar os mesmos valores diretamente como `--base-url`, `--model` e `--api-key`. `--provider opencode-go` seleciona explicitamente o adapter suportado; outros valores são rejeitados antes da criação do run.
 
 Variáveis já definidas no PowerShell ou no gerenciador de segredos do sistema têm precedência sobre `.env`.
 
+## Catálogo de novels
+
+O arquivo `novels.yaml` registra cada novel, sua translation bible, diretório
+de sources, destino de exportação e padrões de provider, modelo e volume.
+Paths são resolvidos em relação ao próprio arquivo. `run_aliases` associa
+identificadores históricos sem alterar os metadados imutáveis dos runs.
+Segredos continuam exclusivamente no ambiente.
+
+O `export.directory` é o caminho do conteúdo **dentro do checkout local do
+repositório de publicação** (por exemplo, `src/content/novels/gariben`); paths
+absolutos ou com `..` são rejeitados. A localização do checkout não fica no
+catálogo versionado: `export` exige `--site-root CAMINHO` (ou a variável
+`NOVEL_TRANSLATOR_SITE_ROOT`), que deve apontar para um diretório existente —
+nenhuma árvore externa é criada silenciosamente.
+
+`kakuyomu_episode_root` registra a raiz de episódios da obra no Kakuyomu, no
+formato `https://kakuyomu.jp/works/<work_id>/episodes`; outros hosts ou
+formatos são rejeitados na carga do catálogo. Com essa raiz registrada, basta
+informar o identificador numérico do episódio:
+
+```powershell
+novel-translator translate --novel gariben --chapter 34 --episode 16818093089356093553
+```
+
+`--episode` compõe a URL a partir do catálogo e dispensa colar o endereço
+completo. Ele é mutuamente exclusivo com `--source`, e o identificador precisa
+ser numérico.
+
 ## Uso
 
 ```powershell
-novel-translator translate --novel minha-novel --chapter 1 --volume 1 --source chapter-ja.txt --bible config/translation-bible.example.yaml --provider opencode-go
-novel-translator translate --novel minha-novel --chapter 2 --source https://kakuyomu.jp/works/WORK_ID/episodes/EPISODE_ID --bible config/translation-bible.example.yaml --provider opencode-go
-novel-translator approve RUN_ID
-novel-translator export RUN_ID --destination ../novels-site/src/content/novels/minha-novel/001.md
-novel-translator inspect RUN_ID
+novel-translator novels
+novel-translator chapters gariben
+novel-translator translate --novel gariben --chapter 29
+novel-translator inspect --novel gariben --chapter 29
+novel-translator approve --novel gariben --chapter 29
+novel-translator export --novel gariben --chapter 29 --site-root ../novels-site
 ```
+
+`translate` não exige escolher entre runs existentes: uma nova tradução usa
+apenas o source configurado e cria um run novo. `--source` explícito ignora
+qualquer ambiguidade do source configurado. Quando um capítulo possui vários
+runs válidos, `chapters` mostra escolhas ordinais e os comandos editoriais
+(`inspect`, `approve`, `export`, `revise` etc.) exigem `--run-choice N`. O
+fluxo normal não exibe IDs completos. `RUN_ID`, `--source`, `--bible`,
+`--provider`, `--model` e `--destination` continuam disponíveis para operação
+técnica ou overrides sobre a novel registrada.
+
+Entradas do workspace que não podem ser listadas são reportadas
+individualmente em `novels` e `chapters` com o motivo: `foreign` (nome fora do
+padrão), `incomplete` (run sem `run.json`), `corrupt` (metadados inválidos),
+`orphan` (run de novel não registrada em nenhuma chave/alias do catálogo) e
+`editorial` (run íntegro cujas revisões/aprovações/exportações não puderam ser
+lidas — o run continua listado com seu estado persistido). O estado
+"exportado" é um fato histórico: revogações posteriores não o desfazem.
 
 `--volume` é opcional. Quando informado, deve ser inteiro positivo; ele é salvo no `run.json` e incluído como `volume` no front matter do Markdown exportado.
 
@@ -50,11 +96,11 @@ Durante a tradução, a CLI informa o segmento e a tentativa em andamento. Por p
 Nunca edite `draft.md` diretamente: ele é a saída imutável do modelo e seu hash é validado antes de aprovar ou exportar. Para editar um capítulo, crie uma revisão completa e imutável:
 
 ```powershell
-novel-translator revise RUN_ID --input reviewed.md --note "Correções editoriais"
-novel-translator revise RUN_ID --input reviewed-v2.md --parent REVISION_ID
-novel-translator diff RUN_ID --revision REVISION_ID
-novel-translator approve RUN_ID --revision REVISION_ID
-novel-translator export RUN_ID --revision REVISION_ID --destination ../novels-site/src/content/novels/minha-novel/001.md
+novel-translator revise --novel gariben --chapter 29 --input reviewed.md --note "Correções editoriais"
+novel-translator revise --novel gariben --chapter 29 --input reviewed-v2.md --parent REVISION_ID
+novel-translator diff --novel gariben --chapter 29 --revision REVISION_ID
+novel-translator approve --novel gariben --chapter 29 --revision REVISION_ID
+novel-translator export --novel gariben --chapter 29 --revision REVISION_ID
 ```
 
 A primeira revisão referencia o draft gerado. Revisões posteriores exigem `--parent`; o sistema nunca escolhe a revisão mais recente automaticamente. Aprovações e exportações são vinculadas ao hash exato do artefato selecionado.
@@ -99,9 +145,10 @@ Python, sem dependência de Typer, FastAPI ou HTML. Regras puras ficam em
 `novel_translator.domain`; workspace, providers e a leitura de fontes
 (arquivo local e Kakuyomu) ficam em `novel_translator.infrastructure`.
 
-Os casos de uso disponíveis são `ListNovels`, `ListChapters`, `GetChapter`,
-`StartTranslation`, `CreateRevision`, `ListRevisions`, `GetDiff`,
-`ApproveArtifact`, `RevokeApproval` e `ExportArtifact`.
+Os casos de uso disponíveis são `ListNovels`, `ListChapters`,
+`ResolveChapter`, `GetChapter`, `StartTranslation`, `CreateRevision`,
+`ListRevisions`, `GetDiff`, `ApproveArtifact`, `RevokeApproval` e
+`ExportArtifact`.
 
 ## Desenvolvimento
 

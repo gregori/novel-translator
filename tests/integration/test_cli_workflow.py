@@ -13,7 +13,8 @@ from novel_translator.cli.app import app
 
 
 def completion_response() -> httpx2.Response:
-    """Return a complete draft from an in-process OpenAI-compatible endpoint."""
+    """Return a complete draft from an in-process
+    OpenAI-compatible endpoint."""
     return httpx2.Response(
         200,
         json={
@@ -35,7 +36,9 @@ def completion_response() -> httpx2.Response:
     )
 
 
-def install_mock_provider(monkeypatch: Any, transport: httpx2.BaseTransport) -> None:
+def install_mock_provider(
+    monkeypatch: Any, transport: httpx2.BaseTransport
+) -> None:
     """Route the production SDK through an in-process transport."""
 
     def build_client(**_: object) -> OpenAI:
@@ -46,7 +49,9 @@ def install_mock_provider(monkeypatch: Any, transport: httpx2.BaseTransport) -> 
             http_client=DefaultHttpxClient(transport=transport),
         )
 
-    monkeypatch.setattr("novel_translator.providers.OpenAI", build_client)
+    monkeypatch.setattr(
+        "novel_translator.infrastructure.providers.OpenAI", build_client
+    )
 
 
 def translation_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
@@ -92,7 +97,9 @@ def invoke_translate(
     )
 
 
-def test_complete_translate_approve_export_inspect_workflow(tmp_path: Path, monkeypatch: Any) -> None:
+def test_complete_translate_approve_export_inspect_workflow(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
     """The complete CLI workflow runs against an offline provider transport."""
     captured_requests: list[httpx2.Request] = []
 
@@ -108,8 +115,12 @@ def test_complete_translate_approve_export_inspect_workflow(tmp_path: Path, monk
     assert translated.exit_code == 0
     run_id = json.loads(translated.stdout)["run_id"]
 
-    inspected = runner.invoke(app, ["inspect", run_id, "--workspace", str(workspace)])
-    approved = runner.invoke(app, ["approve", run_id, "--workspace", str(workspace)])
+    inspected = runner.invoke(
+        app, ["inspect", run_id, "--workspace", str(workspace)]
+    )
+    approved = runner.invoke(
+        app, ["approve", run_id, "--workspace", str(workspace)]
+    )
     destination = tmp_path / "exported.md"
     exported = runner.invoke(
         app,
@@ -140,13 +151,19 @@ def test_complete_translate_approve_export_inspect_workflow(tmp_path: Path, monk
     assert approved.exit_code == 0
     assert exported.exit_code == 0
     assert "Translated body." in destination.read_text(encoding="utf-8")
-    assert json.loads(inspected_with_draft.stdout)["draft"].endswith("Translated body.")
+    assert json.loads(inspected_with_draft.stdout)["draft"].endswith(
+        "Translated body."
+    )
 
 
-def test_translate_reports_provider_http_error(tmp_path: Path, monkeypatch: Any) -> None:
+def test_translate_reports_provider_http_error(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
     """An HTTP provider failure remains controlled at the CLI boundary."""
     transport = httpx2.MockTransport(
-        lambda _: httpx2.Response(503, json={"error": {"message": "Provider unavailable"}})
+        lambda _: httpx2.Response(
+            503, json={"error": {"message": "Provider unavailable"}}
+        )
     )
     install_mock_provider(monkeypatch, transport)
     source, bible, workspace = translation_inputs(tmp_path)
@@ -158,7 +175,9 @@ def test_translate_reports_provider_http_error(tmp_path: Path, monkeypatch: Any)
     assert "Traceback" not in result.output
 
 
-def test_translate_reports_total_timeout(tmp_path: Path, monkeypatch: Any) -> None:
+def test_translate_reports_total_timeout(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
     """A stalled provider is retried and ends as a controlled CLI error."""
     release_request = Event()
 
@@ -186,9 +205,13 @@ def test_translate_reports_total_timeout(tmp_path: Path, monkeypatch: Any) -> No
     assert "Traceback" not in result.output
 
 
-def test_export_without_approval_is_rejected(tmp_path: Path, monkeypatch: Any) -> None:
+def test_export_without_approval_is_rejected(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
     """A translated draft cannot be exported before explicit approval."""
-    install_mock_provider(monkeypatch, httpx2.MockTransport(lambda _: completion_response()))
+    install_mock_provider(
+        monkeypatch, httpx2.MockTransport(lambda _: completion_response())
+    )
     source, bible, workspace = translation_inputs(tmp_path)
     runner = CliRunner()
     translated = invoke_translate(runner, source, bible, workspace)

@@ -24,7 +24,16 @@ O resultado final da pipeline deve poder ser exportado para o repositório `greg
 
 A pipeline de tradução e o site de publicação são sistemas separados.
 
-## Escopo da v1
+## Precedência de documentos
+
+- Este documento é a fonte autoritativa dos requisitos de produto: escopo da v1, separação entre tradução e publicação, restrições técnicas e modelo da translation bible.
+- O `WEB_VERSION_PLAN.md` governa exclusivamente a evolução pós-v1: a interface web e suas fases de implementação.
+- Nessa evolução pós-v1, o `WEB_VERSION_PLAN.md` substitui a exclusão histórica de interface web registrada na seção "Fora do escopo da v1".
+- Em qualquer outro conflito, este documento prevalece.
+
+## Escopo da v1 (concluída)
+
+A v1 foi concluída; esta seção e a seguinte preservam o escopo original da v1 como registro histórico. As demais seções permanecem como baseline de produto.
 
 A v1 é um MVP de tradução.
 
@@ -40,7 +49,7 @@ Ela deve:
 
 ## Fora do escopo da v1
 
-A v1 não inclui:
+A v1 não inclui (exclusões históricas, válidas apenas para a v1):
 
 - revisão automática;
 - múltiplos agentes;
@@ -51,7 +60,7 @@ A v1 não inclui:
 - interface web;
 - publicação automática no `novels-site`.
 
-Esses recursos poderão ser considerados em versões posteriores.
+Essas exclusões não se aplicam à evolução pós-v1, definida pelo `WEB_VERSION_PLAN.md`: a interface web já faz parte dessa evolução. A separação entre tradução e publicação permanece válida em qualquer versão.
 
 ## Restrições técnicas
 

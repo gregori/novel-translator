@@ -13,6 +13,10 @@ class IntegrityError(NovelTranslatorError):
     """Raised when an immutable artifact or invariant is violated."""
 
 
+class TransientProviderError(NovelTranslatorError):
+    """Raised when a provider operation may safely be retried."""
+
+
 class ApprovalRequired(NovelTranslatorError):
     """Raised when an export lacks a current approval."""
 

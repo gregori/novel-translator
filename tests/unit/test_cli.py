@@ -8,7 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 from novel_translator.cli.app import app, load_environment
-from novel_translator.providers import ProviderSelection
+from novel_translator.infrastructure.providers import ProviderSelection
 
 VALID_RUN_ID = "a" * 32
 
@@ -21,11 +21,15 @@ def test_cli_lists_commands() -> None:
         assert command in result.output
 
 
-def test_load_environment_reads_dotenv_without_overriding_exported_values(tmp_path, monkeypatch) -> None:
-    """The local .env provides missing values but never replaces process values."""
+def test_load_environment_reads_dotenv_without_overriding_exported_values(
+    tmp_path, monkeypatch
+) -> None:
+    """The local .env provides missing values but never
+    replaces process values."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".env").write_text(
-        "NOVEL_TRANSLATOR_BASE_URL=https://dotenv.example/v1\nNOVEL_TRANSLATOR_MODEL=dotenv-model\n",
+        "NOVEL_TRANSLATOR_BASE_URL=https://dotenv.example/v1\n"
+        "NOVEL_TRANSLATOR_MODEL=dotenv-model\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("NOVEL_TRANSLATOR_MODEL", "exported-model")
@@ -33,11 +37,18 @@ def test_load_environment_reads_dotenv_without_overriding_exported_values(tmp_pa
 
     load_environment()
 
-    assert __import__("os").environ["NOVEL_TRANSLATOR_BASE_URL"] == "https://dotenv.example/v1"
-    assert __import__("os").environ["NOVEL_TRANSLATOR_MODEL"] == "exported-model"
+    assert (
+        __import__("os").environ["NOVEL_TRANSLATOR_BASE_URL"]
+        == "https://dotenv.example/v1"
+    )
+    assert (
+        __import__("os").environ["NOVEL_TRANSLATOR_MODEL"] == "exported-model"
+    )
 
 
-def test_translate_rejects_unknown_provider_before_creating_run(tmp_path) -> None:
+def test_translate_rejects_unknown_provider_before_creating_run(
+    tmp_path,
+) -> None:
     """Provider validation happens before the workspace or run is created."""
     source = tmp_path / "source.txt"
     source.write_text("source", encoding="utf-8")
@@ -75,8 +86,11 @@ def test_translate_rejects_unknown_provider_before_creating_run(tmp_path) -> Non
     assert not workspace.exists()
 
 
-def test_translate_records_resolved_provider_and_model(tmp_path, monkeypatch) -> None:
-    """Run metadata uses the provider and model attached to the selected adapter."""
+def test_translate_records_resolved_provider_and_model(
+    tmp_path, monkeypatch
+) -> None:
+    """Run metadata uses the provider and model
+    attached to the selected adapter."""
     source = tmp_path / "source.txt"
     source.write_text("source", encoding="utf-8")
     bible = tmp_path / "bible.yaml"
@@ -123,7 +137,9 @@ def create_inspect_run(workspace: Path) -> None:
     """Create a minimal valid run fixture for CLI inspection."""
     run_dir = workspace / "runs" / VALID_RUN_ID
     run_dir.mkdir(parents=True)
-    (run_dir / "run.json").write_text(json.dumps({"run_id": VALID_RUN_ID}), encoding="utf-8")
+    (run_dir / "run.json").write_text(
+        json.dumps({"run_id": VALID_RUN_ID}), encoding="utf-8"
+    )
     (run_dir / "draft.md").write_text("Draft text", encoding="utf-8")
 
 
@@ -133,7 +149,9 @@ def test_inspect_reads_valid_run_with_optional_draft(tmp_path: Path) -> None:
     create_inspect_run(workspace)
     runner = CliRunner()
 
-    metadata_result = runner.invoke(app, ["inspect", VALID_RUN_ID, "--workspace", str(workspace)])
+    metadata_result = runner.invoke(
+        app, ["inspect", VALID_RUN_ID, "--workspace", str(workspace)]
+    )
     draft_result = runner.invoke(
         app,
         [
@@ -162,16 +180,24 @@ def test_inspect_reads_valid_run_with_optional_draft(tmp_path: Path) -> None:
         "A" * 32,
     ],
 )
-def test_inspect_rejects_path_shaped_run_ids(tmp_path: Path, run_id: str) -> None:
+def test_inspect_rejects_path_shaped_run_ids(
+    tmp_path: Path, run_id: str
+) -> None:
     """Traversal, separators, and absolute paths fail as domain errors."""
-    result = CliRunner().invoke(app, ["inspect", run_id, "--workspace", str(tmp_path)])
+    result = CliRunner().invoke(
+        app, ["inspect", run_id, "--workspace", str(tmp_path)]
+    )
 
     assert result.exit_code == 2
-    assert "Run ID must be 32 lowercase hexadecimal characters" in result.output
+    assert (
+        "Run ID must be 32 lowercase hexadecimal characters" in result.output
+    )
     assert "Traceback" not in result.output
 
 
-def test_inspect_rejects_symlinked_run_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_inspect_rejects_symlinked_run_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A symlink in the resolved run path is rejected before reading files."""
     original_is_symlink = Path.is_symlink
     monkeypatch.setattr(
@@ -180,7 +206,9 @@ def test_inspect_rejects_symlinked_run_directory(tmp_path: Path, monkeypatch: py
         lambda path: path.name == VALID_RUN_ID or original_is_symlink(path),
     )
 
-    result = CliRunner().invoke(app, ["inspect", VALID_RUN_ID, "--workspace", str(tmp_path)])
+    result = CliRunner().invoke(
+        app, ["inspect", VALID_RUN_ID, "--workspace", str(tmp_path)]
+    )
 
     assert result.exit_code == 2
     assert "is a symlink" in result.output
@@ -195,7 +223,9 @@ def test_inspect_rejects_symlinked_run_directory(tmp_path: Path, monkeypatch: py
         ('{"run_id": "wrong"}', "does not match"),
     ],
 )
-def test_inspect_reports_missing_or_corrupt_metadata(tmp_path: Path, metadata: str | None, message: str) -> None:
+def test_inspect_reports_missing_or_corrupt_metadata(
+    tmp_path: Path, metadata: str | None, message: str
+) -> None:
     """Missing and corrupt metadata produce controlled CLI failures."""
     workspace = tmp_path / "workspace"
     if metadata is not None:
@@ -203,7 +233,9 @@ def test_inspect_reports_missing_or_corrupt_metadata(tmp_path: Path, metadata: s
         run_dir.mkdir(parents=True)
         (run_dir / "run.json").write_text(metadata, encoding="utf-8")
 
-    result = CliRunner().invoke(app, ["inspect", VALID_RUN_ID, "--workspace", str(workspace)])
+    result = CliRunner().invoke(
+        app, ["inspect", VALID_RUN_ID, "--workspace", str(workspace)]
+    )
 
     assert result.exit_code == 2
     assert message in result.output
@@ -215,7 +247,9 @@ def test_inspect_reports_missing_draft_when_requested(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     run_dir = workspace / "runs" / VALID_RUN_ID
     run_dir.mkdir(parents=True)
-    (run_dir / "run.json").write_text(json.dumps({"run_id": VALID_RUN_ID}), encoding="utf-8")
+    (run_dir / "run.json").write_text(
+        json.dumps({"run_id": VALID_RUN_ID}), encoding="utf-8"
+    )
 
     result = CliRunner().invoke(
         app,

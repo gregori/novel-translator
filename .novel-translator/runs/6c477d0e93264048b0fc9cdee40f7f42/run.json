@@ -1,0 +1,48 @@
+{
+  "bible_hash": "fd7209bf8a7e65b835d448019b987a70cfa88c064feccb449d66bce5a016c3a8",
+  "bible_version": "chapters-01-26",
+  "character_counts": {
+    "draft": 10272,
+    "source": 4303
+  },
+  "completed_at": "2026-09-06T13:40:30.674381+00:00",
+  "context_hash": "51e813cb8fcd905861018e2293328c88765f529b0790f0aabc1a0b3e85b0f338",
+  "draft_title": "Chapter 33: Dinner Together",
+  "duration_seconds": 432.79,
+  "identity": {
+    "chapter": 33,
+    "novel": "gariben-kun-to-uraaka-san"
+  },
+  "model": "deepseek-v4-flash",
+  "prompt_hash": "7e2b11f706db77fde1ff0f84b6e119facbceed5974938e681f9417fcb800237f",
+  "prompt_template_hash": "fd29b0e309764333a600a2e048773d97dcd8bb15c878b482a92d538cd83fc2fa",
+  "prompt_template_version": "v1",
+  "prompt_version": "v1",
+  "provider": "opencode-go",
+  "run_id": "6c477d0e93264048b0fc9cdee40f7f42",
+  "schema_version": 2,
+  "segment_manifest": [
+    {
+      "continuity_context_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gateway_calls": [
+        {
+          "attempt": 1,
+          "rendered_prompt_hash": "52bb7efc165a75ed2a9933ac7066eda60199bb89c8c4785834fecf477030fc45"
+        }
+      ],
+      "rendered_prompt_hash": "52bb7efc165a75ed2a9933ac7066eda60199bb89c8c4785834fecf477030fc45",
+      "segment_index": 1,
+      "source_segment_hash": "c195a8fa3cf81a7180679e435a2b825a003f7b7440fe5b3e106d4e7a9561c423"
+    }
+  ],
+  "source_hash": "c195a8fa3cf81a7180679e435a2b825a003f7b7440fe5b3e106d4e7a9561c423",
+  "source_title": "第33話　夕食をいっしょに",
+  "status": "draft_completed",
+  "timestamp": "2026-09-06T13:33:17.884851+00:00",
+  "token_estimates": {
+    "draft": 2568,
+    "method": "characters_per_token: ja=1, other_languages=4",
+    "source": 4303
+  },
+  "volume": 3
+}

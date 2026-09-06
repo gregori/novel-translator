@@ -1,0 +1,48 @@
+{
+  "bible_hash": "fd7209bf8a7e65b835d448019b987a70cfa88c064feccb449d66bce5a016c3a8",
+  "bible_version": "chapters-01-26",
+  "character_counts": {
+    "draft": 8469,
+    "source": 3414
+  },
+  "completed_at": "2026-09-05T00:20:49.008435+00:00",
+  "context_hash": "51e813cb8fcd905861018e2293328c88765f529b0790f0aabc1a0b3e85b0f338",
+  "draft_title": "Chapter 32: The Beauty Contest Queen Is in My Bathroom!",
+  "duration_seconds": 193.89,
+  "identity": {
+    "chapter": 32,
+    "novel": "gariben-kun-to-uraaka-san"
+  },
+  "model": "deepseek-v4-flash",
+  "prompt_hash": "b62af156e1961f64ef974d59d5fe9e56cc7c69d177464a26b5929f570fbaf78c",
+  "prompt_template_hash": "fd29b0e309764333a600a2e048773d97dcd8bb15c878b482a92d538cd83fc2fa",
+  "prompt_template_version": "v1",
+  "prompt_version": "v1",
+  "provider": "opencode-go",
+  "run_id": "13afb690d58b4302b797b4d1fac2bdd7",
+  "schema_version": 2,
+  "segment_manifest": [
+    {
+      "continuity_context_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gateway_calls": [
+        {
+          "attempt": 1,
+          "rendered_prompt_hash": "46f44e9047a62374ae32105cdefce0769f77ec264770e0aed47ebb7d74e3ea38"
+        }
+      ],
+      "rendered_prompt_hash": "46f44e9047a62374ae32105cdefce0769f77ec264770e0aed47ebb7d74e3ea38",
+      "segment_index": 1,
+      "source_segment_hash": "10ffcac7ac4db4137ce3a0ea6d2eae8b2c04123d80529adc0d291ea88a2d9919"
+    }
+  ],
+  "source_hash": "10ffcac7ac4db4137ce3a0ea6d2eae8b2c04123d80529adc0d291ea88a2d9919",
+  "source_title": "第32話　うちの風呂場に、ミスコン覇者がいる！",
+  "status": "draft_completed",
+  "timestamp": "2026-09-05T00:17:35.118315+00:00",
+  "token_estimates": {
+    "draft": 2118,
+    "method": "characters_per_token: ja=1, other_languages=4",
+    "source": 3414
+  },
+  "volume": 3
+}

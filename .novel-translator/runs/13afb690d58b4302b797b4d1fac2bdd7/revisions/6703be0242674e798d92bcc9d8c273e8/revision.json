@@ -1,0 +1,16 @@
+{
+  "author_type": "human",
+  "content_hash": "80e2f9d8e01744486d20de445140e17eb646cf8574771c28977ee92ac1c357d1",
+  "created_at": "2026-09-06T00:58:37.935369+00:00",
+  "note": "Pequenos ajustes",
+  "parent": {
+    "content_available": true,
+    "content_hash": "e069129adff2c20ca9cf2ee005dfa90ea05f886498e3e09c9e4054a2fe9946a4",
+    "kind": "generated_draft",
+    "revision_id": null
+  },
+  "revision_id": "6703be0242674e798d92bcc9d8c273e8",
+  "revision_kind": "manual",
+  "run_id": "13afb690d58b4302b797b4d1fac2bdd7",
+  "schema_version": 1
+}

@@ -1,0 +1,9 @@
+{
+    "postman.settings.dotenv-detection-notification-visibility": false,
+    "python.analysis.typeCheckingMode": "standard",
+    "python.analysis.autoSearchPaths": true,
+    "python.analysis.useLibraryCodeForTypes": true,
+    "ruff.configuration": "${workspaceFolder}/pyproject.toml",
+    "ruff.configurationPreference": "filesystemFirst",
+    "ruff.lineLength": 79
+}

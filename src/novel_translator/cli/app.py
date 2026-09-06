@@ -8,24 +8,43 @@ from typing import NoReturn
 import typer
 from dotenv import load_dotenv
 
-from novel_translator.core import (
-    TranslationService,
-    Workspace,
-    export_draft,
+from novel_translator.application.approve import (
+    ApproveArtifact,
+    ArtifactApprovalInput,
+    RevokeApproval,
+)
+from novel_translator.application.export import (
+    ExportArtifact,
+    ExportArtifactInput,
+)
+from novel_translator.application.inspect import GetChapter, GetChapterInput
+from novel_translator.application.review import (
+    CreateRevision,
+    CreateRevisionInput,
+    GetDiff,
+    GetDiffInput,
+    ListRevisions,
+    ListRevisionsInput,
+    MigrateLegacyDraft,
+    MigrateLegacyDraftInput,
+)
+from novel_translator.application.translate import (
+    StartTranslation,
+    StartTranslationInput,
+)
+from novel_translator.domain.errors import NovelTranslatorError
+from novel_translator.domain.models import ChapterIdentity
+from novel_translator.infrastructure.export import FilesystemArtifactWriter
+from novel_translator.infrastructure.providers import (
+    OpenCodeGoConfig,
+    resolve_provider,
+)
+from novel_translator.infrastructure.source import (
     load_bible,
+    read_revision_input,
     read_source,
 )
-from novel_translator.core import approve as approve_draft
-from novel_translator.editorial import (
-    create_revision,
-    migrate_legacy_draft,
-    read_revision_input,
-    revision_diff,
-    revision_summary,
-)
-from novel_translator.providers import OpenCodeGoConfig, resolve_provider
-from novel_translator.shared.errors import NovelTranslatorError
-from novel_translator.shared.models import ChapterIdentity
+from novel_translator.infrastructure.workspace import Workspace
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -50,7 +69,9 @@ def translate(
     workspace: Path = typer.Option(Path(".novel-translator")),
     base_url: str = typer.Option(..., envvar="NOVEL_TRANSLATOR_BASE_URL"),
     model: str = typer.Option(..., envvar="NOVEL_TRANSLATOR_MODEL"),
-    api_key: str = typer.Option(..., envvar="NOVEL_TRANSLATOR_API_KEY", hide_input=True),
+    api_key: str = typer.Option(
+        ..., envvar="NOVEL_TRANSLATOR_API_KEY", hide_input=True
+    ),
     provider: str = typer.Option("opencode-go"),
     volume: int | None = typer.Option(None, min=1),
     request_timeout: float = typer.Option(90.0, min=1.0),
@@ -63,29 +84,37 @@ def translate(
             provider,
             OpenCodeGoConfig(base_url, model, api_key, request_timeout),
         )
-        run_id = TranslationService(
+        result = StartTranslation(
             Workspace(workspace),
             selection.gateway,
-        ).translate(
-            ChapterIdentity(novel, chapter),
-            read_source(source),
-            load_bible(bible),
-            selection.name,
-            selection.model,
-            volume,
-            lambda index, total, attempt: typer.echo(
-                f"Translating segment {index}/{total} (attempt {attempt}/3)...",
-                err=True,
-            ),
-            lambda index, total, attempt, error: typer.echo(
-                f"Request failed for segment {index}/{total} (attempt {attempt}/3): {type(error).__name__}",
-                err=True,
-            ),
-            segment_limit,
+        ).execute(
+            StartTranslationInput(
+                identity=ChapterIdentity(novel, chapter),
+                source=read_source(source),
+                bible=load_bible(bible),
+                provider=selection.name,
+                model=selection.model,
+                volume=volume,
+                progress=lambda index, total, attempt: typer.echo(
+                    f"Translating segment {index}/{total} "
+                    f"(attempt {attempt}/3)...",
+                    err=True,
+                ),
+                retry_notice=lambda index, total, attempt, error: typer.echo(
+                    f"Request failed for segment {index}/{total} "
+                    f"(attempt {attempt}/3): {type(error).__name__}",
+                    err=True,
+                ),
+                segment_limit=segment_limit,
+            )
         )
     except NovelTranslatorError as error:
         fail(error)
-    typer.echo(json.dumps({"run_id": run_id}) if json_output else f"Draft created: {run_id}")
+    typer.echo(
+        json.dumps({"run_id": result.run_id})
+        if json_output
+        else f"Draft created: {result.run_id}"
+    )
 
 
 @app.command()
@@ -98,10 +127,19 @@ def approve(
 ) -> None:
     """Append an approval or revocation event for one verified artifact."""
     try:
-        event = approve_draft(Workspace(workspace), run_id, not revoke, revision)
+        use_case = (
+            RevokeApproval(Workspace(workspace))
+            if revoke
+            else ApproveArtifact(Workspace(workspace))
+        )
+        event = use_case.execute(ArtifactApprovalInput(run_id, revision))
     except NovelTranslatorError as error:
         fail(error)
-    typer.echo(json.dumps(asdict(event)) if json_output else f"Approval recorded: {event.approved}")
+    typer.echo(
+        json.dumps(asdict(event))
+        if json_output
+        else f"Approval recorded: {event.approved}"
+    )
 
 
 @app.command("export")
@@ -116,18 +154,21 @@ def export_command(
 ) -> None:
     """Export an approved draft without building, pushing or publishing."""
     try:
-        path = export_draft(
-            Workspace(workspace),
-            run_id,
-            destination,
-            title,
-            overwrite,
-            publish_date,
-            revision,
+        result = ExportArtifact(
+            Workspace(workspace), FilesystemArtifactWriter()
+        ).execute(
+            ExportArtifactInput(
+                run_id=run_id,
+                destination=destination,
+                revision_id=revision,
+                title=title,
+                overwrite=overwrite,
+                publish_date=publish_date,
+            )
         )
     except NovelTranslatorError as error:
         fail(error)
-    typer.echo(f"Exported: {path}")
+    typer.echo(f"Exported: {result.path}")
 
 
 @app.command()
@@ -140,15 +181,18 @@ def inspect(
 ) -> None:
     """Inspect run metadata or one immutable revision; content is opt-in."""
     try:
-        store = Workspace(workspace)
-        if revision is None:
-            data = store.inspect_run(run_id, include_draft)
-        else:
-            record, artifact = store.revision(run_id, revision)
-            data = asdict(record)
-            data["approved"] = store.is_artifact_approved(artifact, run_id)
-            if include_content:
-                data["content"] = artifact.content
+        data = (
+            GetChapter(Workspace(workspace))
+            .execute(
+                GetChapterInput(
+                    run_id=run_id,
+                    include_draft=include_draft,
+                    revision_id=revision,
+                    include_content=include_content,
+                )
+            )
+            .data
+        )
     except NovelTranslatorError as error:
         fail(error)
     typer.echo(json.dumps(data, ensure_ascii=False, indent=2))
@@ -165,11 +209,23 @@ def revise(
 ) -> None:
     """Create an immutable human revision from a verified parent artifact."""
     try:
-        record = create_revision(Workspace(workspace), run_id, read_revision_input(input), parent, note)
+        record = CreateRevision(Workspace(workspace)).execute(
+            CreateRevisionInput(
+                run_id, read_revision_input(input), parent, note
+            )
+        )
     except NovelTranslatorError as error:
         fail(error)
-    payload = {"revision_id": record.revision_id, "content_hash": record.content_hash, "parent": asdict(record.parent)}
-    typer.echo(json.dumps(payload) if json_output else f"Revision created: {record.revision_id}")
+    payload = {
+        "revision_id": record.revision_id,
+        "content_hash": record.content_hash,
+        "parent": asdict(record.parent),
+    }
+    typer.echo(
+        json.dumps(payload)
+        if json_output
+        else f"Revision created: {record.revision_id}"
+    )
 
 
 @app.command()
@@ -179,7 +235,14 @@ def revisions(
 ) -> None:
     """List immutable revisions without exposing their content."""
     try:
-        payload = revision_summary(Workspace(workspace), run_id)
+        summaries = ListRevisions(Workspace(workspace)).execute(
+            ListRevisionsInput(run_id)
+        )
+        payload: list[dict[str, object]] = []
+        for summary in summaries:
+            item = asdict(summary.record)
+            item["approved"] = summary.approved
+            payload.append(item)
     except NovelTranslatorError as error:
         fail(error)
     typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -192,9 +255,13 @@ def diff_command(
     against: str | None = typer.Option(None),
     workspace: Path = typer.Option(Path(".novel-translator")),
 ) -> None:
-    """Render a unified diff for one revision and its declared or selected parent."""
+    """Render a unified diff for one revision and its declared or
+    selected parent."""
     try:
-        typer.echo(revision_diff(Workspace(workspace), run_id, revision, against), nl=False)
+        result = GetDiff(Workspace(workspace)).execute(
+            GetDiffInput(run_id, revision, against)
+        )
+        typer.echo(result.content, nl=False)
     except NovelTranslatorError as error:
         fail(error)
 
@@ -207,13 +274,24 @@ def migrate_legacy_draft_command(
     note: str | None = typer.Option(None),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
-    """Snapshot a legacy published draft without claiming it is the generated output."""
+    """Snapshot a legacy published draft without claiming it is the
+    generated output."""
     try:
-        record = migrate_legacy_draft(Workspace(workspace), run_id, as_published, note)
+        record = MigrateLegacyDraft(Workspace(workspace)).execute(
+            MigrateLegacyDraftInput(run_id, as_published, note)
+        )
     except NovelTranslatorError as error:
         fail(error)
-    payload = {"revision_id": record.revision_id, "content_hash": record.content_hash, "parent": asdict(record.parent)}
-    typer.echo(json.dumps(payload) if json_output else f"Legacy revision created: {record.revision_id}")
+    payload = {
+        "revision_id": record.revision_id,
+        "content_hash": record.content_hash,
+        "parent": asdict(record.parent),
+    }
+    typer.echo(
+        json.dumps(payload)
+        if json_output
+        else f"Legacy revision created: {record.revision_id}"
+    )
 
 
 def main() -> None:

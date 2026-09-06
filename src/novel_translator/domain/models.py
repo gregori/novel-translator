@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from enum import StrEnum
+from enum import Enum, StrEnum
 
 
 class RunStatus(StrEnum):
@@ -45,6 +45,14 @@ class RevisionKind(StrEnum):
     LEGACY_PUBLISHED_SNAPSHOT = "legacy_published_snapshot"
 
 
+class RunEntryError(Enum):
+    """Reason one runs-directory entry cannot appear in a catalog listing."""
+
+    FOREIGN = "foreign"
+    INCOMPLETE = "incomplete"
+    CORRUPT = "corrupt"
+
+
 @dataclass(frozen=True, slots=True)
 class ChapterIdentity:
     """Canonical novel and chapter identity supplied by the CLI."""
@@ -55,7 +63,9 @@ class ChapterIdentity:
     def __post_init__(self) -> None:
         """Validate canonical identity values."""
         if not self.novel.strip() or self.chapter < 1:
-            raise ValueError("Novel must be non-empty and chapter must be positive.")
+            raise ValueError(
+                "Novel must be non-empty and chapter must be positive."
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +85,22 @@ class SegmentPromptManifest:
     continuity_context_hash: str
     rendered_prompt_hash: str
     gateway_calls: list[PromptCall]
+
+
+@dataclass(frozen=True, slots=True)
+class RunEntryIssue:
+    """One skipped runs entry with a safe identifier and its error type."""
+
+    entry: str
+    error: RunEntryError
+
+
+@dataclass(frozen=True, slots=True)
+class RunCatalog:
+    """Listable run identifiers plus typed issues for skipped entries."""
+
+    run_ids: tuple[str, ...]
+    issues: tuple[RunEntryIssue, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +125,18 @@ class RunRecord:
     bible_version: str | None = None
     volume: int | None = None
     source_title: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RunCompletion:
+    """Application-computed audit values for a completed translation run."""
+
+    duration_seconds: float
+    source_characters: int
+    draft_characters: int
+    source_tokens: int
+    draft_tokens: int
+    draft_title: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +176,16 @@ class EditorialApproval:
     approved: bool
     timestamp: str
     reason: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ApprovalEvent:
+    """Legacy append-only approval decision for an exact draft hash."""
+
+    run_id: str
+    draft_hash: str
+    approved: bool
+    timestamp: str
 
 
 @dataclass(frozen=True, slots=True)

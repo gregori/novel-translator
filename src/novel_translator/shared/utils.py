@@ -24,7 +24,10 @@ def redact(value: object) -> object:
     if isinstance(value, dict):
         mapping = cast(dict[object, object], value)
         return {
-            str(key): "***" if SECRET_KEY_PATTERN.search(str(key)) else redact(item) for key, item in mapping.items()
+            str(key): "***"
+            if SECRET_KEY_PATTERN.search(str(key))
+            else redact(item)
+            for key, item in mapping.items()
         }
     if isinstance(value, list):
         return [redact(item) for item in cast(list[object], value)]

@@ -91,6 +91,18 @@ string vazia.
 seu `rendered_prompt_hash`. O `run.json` armazena apenas hashes e metadados nesse
 manifesto, sem duplicar conteúdo sensível.
 
+## Arquitetura da aplicação
+
+A CLI é somente um adaptador de entrada. Os fluxos reutilizáveis pela futura
+interface web ficam em `novel_translator.application` e recebem/retornam tipos
+Python, sem dependência de Typer, FastAPI ou HTML. Regras puras ficam em
+`novel_translator.domain`; workspace, providers e a leitura de fontes
+(arquivo local e Kakuyomu) ficam em `novel_translator.infrastructure`.
+
+Os casos de uso disponíveis são `ListNovels`, `ListChapters`, `GetChapter`,
+`StartTranslation`, `CreateRevision`, `ListRevisions`, `GetDiff`,
+`ApproveArtifact`, `RevokeApproval` e `ExportArtifact`.
+
 ## Desenvolvimento
 
 ```powershell

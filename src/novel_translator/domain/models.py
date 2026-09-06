@@ -15,6 +15,19 @@ class RunStatus(StrEnum):
     INTERRUPTED = "interrupted"
 
 
+class ChapterState(StrEnum):
+    """User-facing aggregate state for one registered chapter."""
+
+    NO_SOURCE = "no_source"
+    READY = "ready"
+    TRANSLATING = "translating"
+    DRAFT_AVAILABLE = "draft_available"
+    IN_REVIEW = "in_review"
+    APPROVED = "approved"
+    EXPORTED = "exported"
+    FAILED = "failed"
+
+
 class RunPhase(StrEnum):
     """Bounded workflow phases used in safe failure metadata."""
 
@@ -51,6 +64,11 @@ class RunEntryError(Enum):
     FOREIGN = "foreign"
     INCOMPLETE = "incomplete"
     CORRUPT = "corrupt"
+    ORPHAN = "orphan"
+    EDITORIAL = "editorial"
+
+
+type ArtifactKey = tuple[ArtifactKind, str | None, str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,6 +194,19 @@ class EditorialApproval:
     approved: bool
     timestamp: str
     reason: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ExportEvent:
+    """Append-only provenance for one successfully exported artifact."""
+
+    schema_version: int
+    run_id: str
+    artifact_kind: ArtifactKind
+    artifact_id: str | None
+    content_hash: str
+    destination: str
+    exported_at: str
 
 
 @dataclass(frozen=True, slots=True)

@@ -13,11 +13,22 @@ from novel_translator.application.approve import (
     ArtifactApprovalInput,
     RevokeApproval,
 )
+from novel_translator.application.catalog import (
+    ListChapters,
+    ListChaptersInput,
+    ListNovels,
+    ResolveChapter,
+    ResolveChapterInput,
+)
 from novel_translator.application.export import (
     ExportArtifact,
     ExportArtifactInput,
 )
 from novel_translator.application.inspect import GetChapter, GetChapterInput
+from novel_translator.application.prepare import (
+    PrepareTranslation,
+    PrepareTranslationInput,
+)
 from novel_translator.application.review import (
     CreateRevision,
     CreateRevisionInput,
@@ -32,8 +43,12 @@ from novel_translator.application.translate import (
     StartTranslation,
     StartTranslationInput,
 )
-from novel_translator.domain.errors import NovelTranslatorError
+from novel_translator.domain.errors import (
+    NovelTranslatorError,
+    ValidationError,
+)
 from novel_translator.domain.models import ChapterIdentity
+from novel_translator.infrastructure.catalog import load_catalog
 from novel_translator.infrastructure.export import FilesystemArtifactWriter
 from novel_translator.infrastructure.providers import (
     OpenCodeGoConfig,
@@ -60,41 +75,146 @@ def fail(error: NovelTranslatorError) -> NoReturn:
     raise typer.Exit(2)
 
 
+def resolve_run_id(
+    run_id: str | None,
+    novel: str | None,
+    chapter: int | None,
+    run_choice: int | None,
+    config: Path,
+    workspace: Path,
+) -> str:
+    """Resolve either an explicit technical ID or a friendly chapter choice."""
+    if run_id is not None:
+        if novel is not None or chapter is not None or run_choice is not None:
+            raise ValidationError(
+                "Use either RUN_ID or --novel/--chapter, not both."
+            )
+        return run_id
+    if novel is None or chapter is None:
+        raise ValidationError("Provide RUN_ID or both --novel and --chapter.")
+    resolved = ResolveChapter(
+        load_catalog(config), Workspace(workspace)
+    ).execute(ResolveChapterInput(novel, chapter, run_choice))
+    if resolved.run_id is None:
+        raise ValidationError("The selected chapter has no translation run.")
+    return resolved.run_id
+
+
+@app.command()
+def novels(
+    config: Path = typer.Option(
+        Path("novels.yaml"), exists=True, readable=True
+    ),
+    workspace: Path = typer.Option(Path(".novel-translator")),
+) -> None:
+    """List registered novels without exposing run identifiers."""
+    try:
+        catalog = ListNovels(
+            load_catalog(config), Workspace(workspace)
+        ).execute()
+    except NovelTranslatorError as error:
+        fail(error)
+    for novel in catalog.novels:
+        typer.echo(
+            f"{novel.novel}: {novel.title} "
+            f"({novel.chapter_count} chapters, {novel.run_count} runs)"
+        )
+    for issue in catalog.issues:
+        typer.echo(
+            f"Skipped run entry {issue.entry} ({issue.error.value})",
+            err=True,
+        )
+
+
+@app.command()
+def chapters(
+    novel: str,
+    config: Path = typer.Option(
+        Path("novels.yaml"), exists=True, readable=True
+    ),
+    workspace: Path = typer.Option(Path(".novel-translator")),
+) -> None:
+    """List chapter states and ordinal choices without full run IDs."""
+    try:
+        catalog = ListChapters(
+            load_catalog(config), Workspace(workspace)
+        ).execute(ListChaptersInput(novel))
+    except NovelTranslatorError as error:
+        fail(error)
+    for chapter in catalog.chapters:
+        typer.echo(
+            f"{chapter.chapter}: {chapter.state.value} "
+            f"({len(chapter.runs)} runs)"
+        )
+        if chapter.run_selection_required:
+            for run in chapter.runs:
+                typer.echo(
+                    f"  choice {run.choice}: {run.timestamp} "
+                    f"{run.model} [{run.status}]"
+                )
+        if chapter.source_selection_required:
+            for source in chapter.sources:
+                typer.echo(f"  source {source.choice}: {source.filename}")
+    for issue in catalog.issues:
+        typer.echo(
+            f"Skipped run entry {issue.entry} ({issue.error.value})",
+            err=True,
+        )
+
+
 @app.command()
 def translate(
     novel: str = typer.Option(...),
     chapter: int = typer.Option(..., min=1),
-    source: str = typer.Option(...),
-    bible: Path = typer.Option(..., exists=True, readable=True),
+    source: str | None = typer.Option(None),
+    episode: str | None = typer.Option(None),
+    bible: Path | None = typer.Option(None, exists=True, readable=True),
+    config: Path = typer.Option(Path("novels.yaml")),
+    source_choice: int | None = typer.Option(None, min=1),
     workspace: Path = typer.Option(Path(".novel-translator")),
     base_url: str = typer.Option(..., envvar="NOVEL_TRANSLATOR_BASE_URL"),
-    model: str = typer.Option(..., envvar="NOVEL_TRANSLATOR_MODEL"),
+    model: str | None = typer.Option(None, envvar="NOVEL_TRANSLATOR_MODEL"),
     api_key: str = typer.Option(
         ..., envvar="NOVEL_TRANSLATOR_API_KEY", hide_input=True
     ),
-    provider: str = typer.Option("opencode-go"),
+    provider: str | None = typer.Option(None),
     volume: int | None = typer.Option(None, min=1),
     request_timeout: float = typer.Option(90.0, min=1.0),
     segment_limit: int = typer.Option(60_000, min=1),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
-    """Translate a UTF-8 file or Kakuyomu URL into an immutable draft."""
+    """Translate a registered chapter into an immutable draft."""
     try:
+        prepared = PrepareTranslation(load_catalog(config)).execute(
+            PrepareTranslationInput(
+                novel=novel,
+                chapter=chapter,
+                source=source,
+                episode=episode,
+                source_choice=source_choice,
+                bible=bible,
+                provider=provider,
+                model=model,
+                volume=volume,
+            )
+        )
         selection = resolve_provider(
-            provider,
-            OpenCodeGoConfig(base_url, model, api_key, request_timeout),
+            prepared.provider,
+            OpenCodeGoConfig(
+                base_url, prepared.model, api_key, request_timeout
+            ),
         )
         result = StartTranslation(
             Workspace(workspace),
             selection.gateway,
         ).execute(
             StartTranslationInput(
-                identity=ChapterIdentity(novel, chapter),
-                source=read_source(source),
-                bible=load_bible(bible),
+                identity=ChapterIdentity(prepared.novel, prepared.chapter),
+                source=read_source(prepared.source),
+                bible=load_bible(prepared.bible),
                 provider=selection.name,
                 model=selection.model,
-                volume=volume,
+                volume=prepared.volume,
                 progress=lambda index, total, attempt: typer.echo(
                     f"Translating segment {index}/{total} "
                     f"(attempt {attempt}/3)...",
@@ -113,13 +233,17 @@ def translate(
     typer.echo(
         json.dumps({"run_id": result.run_id})
         if json_output
-        else f"Draft created: {result.run_id}"
+        else f"Draft created: {prepared.novel} chapter {prepared.chapter}"
     )
 
 
 @app.command()
 def approve(
-    run_id: str,
+    run_id: str | None = typer.Argument(None),
+    novel: str | None = typer.Option(None),
+    chapter: int | None = typer.Option(None, min=1),
+    run_choice: int | None = typer.Option(None, min=1),
+    config: Path = typer.Option(Path("novels.yaml")),
     workspace: Path = typer.Option(Path(".novel-translator")),
     revoke: bool = False,
     revision: str | None = typer.Option(None),
@@ -127,12 +251,17 @@ def approve(
 ) -> None:
     """Append an approval or revocation event for one verified artifact."""
     try:
+        selected_run_id = resolve_run_id(
+            run_id, novel, chapter, run_choice, config, workspace
+        )
         use_case = (
             RevokeApproval(Workspace(workspace))
             if revoke
             else ApproveArtifact(Workspace(workspace))
         )
-        event = use_case.execute(ArtifactApprovalInput(run_id, revision))
+        event = use_case.execute(
+            ArtifactApprovalInput(selected_run_id, revision)
+        )
     except NovelTranslatorError as error:
         fail(error)
     typer.echo(
@@ -144,21 +273,39 @@ def approve(
 
 @app.command("export")
 def export_command(
-    run_id: str,
-    destination: Path = typer.Option(...),
+    run_id: str | None = typer.Argument(None),
+    destination: Path | None = typer.Option(None),
+    novel: str | None = typer.Option(None),
+    chapter: int | None = typer.Option(None, min=1),
+    run_choice: int | None = typer.Option(None, min=1),
+    config: Path = typer.Option(Path("novels.yaml")),
     title: str | None = typer.Option(None),
     publish_date: str | None = typer.Option(None, "--publish-date"),
     workspace: Path = typer.Option(Path(".novel-translator")),
     overwrite: bool = typer.Option(False, "--overwrite"),
+    site_root: Path | None = typer.Option(
+        None, "--site-root", envvar="NOVEL_TRANSLATOR_SITE_ROOT"
+    ),
     revision: str | None = typer.Option(None),
 ) -> None:
     """Export an approved draft without building, pushing or publishing."""
     try:
+        selected_run_id = resolve_run_id(
+            run_id, novel, chapter, run_choice, config, workspace
+        )
+        if destination is None:
+            if novel is None or chapter is None:
+                raise ValidationError(
+                    "Provide --destination with a technical RUN_ID."
+                )
+            destination = load_catalog(config).export_destination(
+                novel, chapter, site_root
+            )
         result = ExportArtifact(
             Workspace(workspace), FilesystemArtifactWriter()
         ).execute(
             ExportArtifactInput(
-                run_id=run_id,
+                run_id=selected_run_id,
                 destination=destination,
                 revision_id=revision,
                 title=title,
@@ -173,7 +320,11 @@ def export_command(
 
 @app.command()
 def inspect(
-    run_id: str,
+    run_id: str | None = typer.Argument(None),
+    novel: str | None = typer.Option(None),
+    chapter: int | None = typer.Option(None, min=1),
+    run_choice: int | None = typer.Option(None, min=1),
+    config: Path = typer.Option(Path("novels.yaml")),
     workspace: Path = typer.Option(Path(".novel-translator")),
     include_draft: bool = False,
     revision: str | None = typer.Option(None),
@@ -181,11 +332,14 @@ def inspect(
 ) -> None:
     """Inspect run metadata or one immutable revision; content is opt-in."""
     try:
+        selected_run_id = resolve_run_id(
+            run_id, novel, chapter, run_choice, config, workspace
+        )
         data = (
             GetChapter(Workspace(workspace))
             .execute(
                 GetChapterInput(
-                    run_id=run_id,
+                    run_id=selected_run_id,
                     include_draft=include_draft,
                     revision_id=revision,
                     include_content=include_content,
@@ -200,8 +354,12 @@ def inspect(
 
 @app.command()
 def revise(
-    run_id: str,
+    run_id: str | None = typer.Argument(None),
     input: Path = typer.Option(..., exists=True, readable=True),
+    novel: str | None = typer.Option(None),
+    chapter: int | None = typer.Option(None, min=1),
+    run_choice: int | None = typer.Option(None, min=1),
+    config: Path = typer.Option(Path("novels.yaml")),
     workspace: Path = typer.Option(Path(".novel-translator")),
     parent: str | None = typer.Option(None),
     note: str | None = typer.Option(None),
@@ -209,9 +367,12 @@ def revise(
 ) -> None:
     """Create an immutable human revision from a verified parent artifact."""
     try:
+        selected_run_id = resolve_run_id(
+            run_id, novel, chapter, run_choice, config, workspace
+        )
         record = CreateRevision(Workspace(workspace)).execute(
             CreateRevisionInput(
-                run_id, read_revision_input(input), parent, note
+                selected_run_id, read_revision_input(input), parent, note
             )
         )
     except NovelTranslatorError as error:
@@ -230,13 +391,20 @@ def revise(
 
 @app.command()
 def revisions(
-    run_id: str,
+    run_id: str | None = typer.Argument(None),
+    novel: str | None = typer.Option(None),
+    chapter: int | None = typer.Option(None, min=1),
+    run_choice: int | None = typer.Option(None, min=1),
+    config: Path = typer.Option(Path("novels.yaml")),
     workspace: Path = typer.Option(Path(".novel-translator")),
 ) -> None:
     """List immutable revisions without exposing their content."""
     try:
+        selected_run_id = resolve_run_id(
+            run_id, novel, chapter, run_choice, config, workspace
+        )
         summaries = ListRevisions(Workspace(workspace)).execute(
-            ListRevisionsInput(run_id)
+            ListRevisionsInput(selected_run_id)
         )
         payload: list[dict[str, object]] = []
         for summary in summaries:
@@ -250,16 +418,22 @@ def revisions(
 
 @app.command("diff")
 def diff_command(
-    run_id: str,
+    run_id: str | None = typer.Argument(None),
     revision: str = typer.Option(...),
     against: str | None = typer.Option(None),
+    novel: str | None = typer.Option(None),
+    chapter: int | None = typer.Option(None, min=1),
+    run_choice: int | None = typer.Option(None, min=1),
+    config: Path = typer.Option(Path("novels.yaml")),
     workspace: Path = typer.Option(Path(".novel-translator")),
 ) -> None:
-    """Render a unified diff for one revision and its declared or
-    selected parent."""
+    """Render a unified diff for one revision and its selected parent."""
     try:
+        selected_run_id = resolve_run_id(
+            run_id, novel, chapter, run_choice, config, workspace
+        )
         result = GetDiff(Workspace(workspace)).execute(
-            GetDiffInput(run_id, revision, against)
+            GetDiffInput(selected_run_id, revision, against)
         )
         typer.echo(result.content, nl=False)
     except NovelTranslatorError as error:
@@ -268,17 +442,23 @@ def diff_command(
 
 @app.command("migrate-legacy-draft")
 def migrate_legacy_draft_command(
-    run_id: str,
+    run_id: str | None = typer.Argument(None),
     as_published: bool = typer.Option(False, "--as-published"),
+    novel: str | None = typer.Option(None),
+    chapter: int | None = typer.Option(None, min=1),
+    run_choice: int | None = typer.Option(None, min=1),
+    config: Path = typer.Option(Path("novels.yaml")),
     workspace: Path = typer.Option(Path(".novel-translator")),
     note: str | None = typer.Option(None),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
-    """Snapshot a legacy published draft without claiming it is the
-    generated output."""
+    """Snapshot a legacy published draft without claiming generated output."""
     try:
+        selected_run_id = resolve_run_id(
+            run_id, novel, chapter, run_choice, config, workspace
+        )
         record = MigrateLegacyDraft(Workspace(workspace)).execute(
-            MigrateLegacyDraftInput(run_id, as_published, note)
+            MigrateLegacyDraftInput(selected_run_id, as_published, note)
         )
     except NovelTranslatorError as error:
         fail(error)

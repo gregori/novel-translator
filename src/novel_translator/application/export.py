@@ -1,12 +1,13 @@
 """Typed artifact export use case."""
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Protocol
 
 from novel_translator.application.approve import resolve_artifact
 from novel_translator.domain.errors import ApprovalRequired, ValidationError
+from novel_translator.domain.models import ExportEvent
 from novel_translator.domain.translation import extract_draft_title
 from novel_translator.infrastructure.workspace import Workspace
 
@@ -75,6 +76,17 @@ class ExportArtifact:
         rendered = "\n".join([*front_matter, "---", "", artifact.content, ""])
         path = self._writer.write(
             request.destination, rendered, request.overwrite
+        )
+        self._workspace.exports.append(
+            ExportEvent(
+                schema_version=1,
+                run_id=request.run_id,
+                artifact_kind=artifact.kind,
+                artifact_id=artifact.artifact_id,
+                content_hash=artifact.content_hash,
+                destination=str(path.resolve()),
+                exported_at=datetime.now(UTC).isoformat(),
+            )
         )
         return ExportResult(path)
 

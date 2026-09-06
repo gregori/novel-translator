@@ -52,12 +52,45 @@ class RevisionRepository:
         self, run_id: str, revision_id: str
     ) -> tuple[RevisionRecord, EditorialArtifact]:
         """Read a revision and verify metadata and immutable content hash."""
+        record = self._record(run_id, revision_id)
+        try:
+            content = self._storage.revision_path(
+                run_id, revision_id, "content.md"
+            ).read_text(encoding="utf-8")
+        except FileNotFoundError as error:
+            raise ValidationError("Revision was not found.") from error
+        except (OSError, UnicodeError) as error:
+            raise ValidationError(
+                "Revision content could not be read."
+            ) from error
+        artifact = EditorialArtifact(
+            ArtifactKind.REVISION, revision_id, content, sha256_text(content)
+        )
+        if artifact.content_hash != record.content_hash:
+            raise IntegrityError("Revision content integrity check failed.")
+        return record, artifact
+
+    def revision_records(self, run_id: str) -> list[RevisionRecord]:
+        """List validated revision metadata without reading content."""
+        root = self._storage.run_path(run_id, "revisions")
+        if not root.exists():
+            return []
+        if root.is_symlink():
+            raise ValidationError(
+                "Path escapes the workspace or is a symlink."
+            )
+        records: list[RevisionRecord] = []
+        for entry in root.iterdir():
+            if not entry.is_dir() or entry.is_symlink():
+                raise IntegrityError("Revision directory is invalid.")
+            records.append(self._record(run_id, entry.name))
+        return sorted(records, key=lambda item: item.created_at)
+
+    def _record(self, run_id: str, revision_id: str) -> RevisionRecord:
+        """Parse and validate one revision's immutable metadata."""
         try:
             serialized = self._storage.revision_path(
                 run_id, revision_id, "revision.json"
-            ).read_text(encoding="utf-8")
-            content = self._storage.revision_path(
-                run_id, revision_id, "content.md"
             ).read_text(encoding="utf-8")
             raw = cast(dict[str, object], json.loads(serialized))
             parent_raw = cast(dict[str, object], raw["parent"])
@@ -91,26 +124,4 @@ class RevisionRepository:
             raise IntegrityError("Revision metadata is invalid.") from error
         if record.run_id != run_id or record.revision_id != revision_id:
             raise IntegrityError("Revision metadata does not match its path.")
-        artifact = EditorialArtifact(
-            ArtifactKind.REVISION, revision_id, content, sha256_text(content)
-        )
-        if artifact.content_hash != record.content_hash:
-            raise IntegrityError("Revision content integrity check failed.")
-        return record, artifact
-
-    def revisions(self, run_id: str) -> list[RevisionRecord]:
-        """List validated revision metadata without revision content."""
-        root = self._storage.run_path(run_id, "revisions")
-        if not root.exists():
-            return []
-        if root.is_symlink():
-            raise ValidationError(
-                "Path escapes the workspace or is a symlink."
-            )
-        records: list[RevisionRecord] = []
-        for entry in root.iterdir():
-            if not entry.is_dir() or entry.is_symlink():
-                raise IntegrityError("Revision directory is invalid.")
-            record, _ = self.revision(run_id, entry.name)
-            records.append(record)
-        return sorted(records, key=lambda item: item.created_at)
+        return record

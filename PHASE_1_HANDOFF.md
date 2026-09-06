@@ -6,6 +6,16 @@ Extração de uma camada de aplicação reutilizável pela CLI e pela futura int
 
 A CLI continua sendo um adaptador de entrada; regras editoriais e orquestração não dependem de Typer, FastAPI ou HTML.
 
+## Estado da entrega
+
+- A implementação foi mergeada em `main` pelo PR
+  [#24 — extract cohesive application layers](https://github.com/gregori/novel-translator/pull/24)
+  em 6 de setembro de 2026.
+- O commit de implementação é `999d89d`
+  (`refactor: extract cohesive application layers`).
+- A Fase 1 está encerrada; novas alterações devem partir da `main`
+  atualizada.
+
 ## Arquitetura atual
 
 ```text

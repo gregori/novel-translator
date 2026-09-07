@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from novel_translator.application.working_copy import WorkingCopyRepository
 from novel_translator.domain.errors import (
     IntegrityError,
     NovelTranslatorError,
@@ -100,6 +101,15 @@ class ChapterSummary:
 class ChapterCatalog:
     """Aggregated chapters for one registered novel."""
 
+    chapters: tuple[ChapterSummary, ...]
+    issues: tuple[RunEntryIssue, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class DashboardCatalog:
+    """Every novel and chapter from one shared run index pass."""
+
+    novels: tuple[NovelSummary, ...]
     chapters: tuple[ChapterSummary, ...]
     issues: tuple[RunEntryIssue, ...]
 
@@ -294,15 +304,27 @@ def _run_index(
     return tuple(indexed), tuple(issues)
 
 
+def _projection(
+    registry: NovelRegistry,
+    workspace: Workspace,
+    working_copies: WorkingCopyRepository,
+) -> tuple[tuple[_IndexedRun, ...], tuple[RunEntryIssue, ...], frozenset[str]]:
+    """Index runs once and pair them with active working copy runs."""
+    indexed, issues = _run_index(workspace, registry.all_run_identities())
+    return indexed, issues, working_copies.active_run_ids()
+
+
 def _chapter_state(
-    sources: tuple[Path, ...], runs: tuple[_IndexedRun, ...]
+    sources: tuple[Path, ...],
+    runs: tuple[_IndexedRun, ...],
+    working_copy_active: bool,
 ) -> ChapterState:
     """Aggregate the most actionable persisted state for one chapter."""
     if any(run.exported for run in runs):
         return ChapterState.EXPORTED
     if any(run.approved for run in runs):
         return ChapterState.APPROVED
-    if any(run.has_revision for run in runs):
+    if working_copy_active or any(run.has_revision for run in runs):
         return ChapterState.IN_REVIEW
     if any(run.status is RunStatus.DRAFT_COMPLETED for run in runs):
         return ChapterState.DRAFT_AVAILABLE
@@ -322,6 +344,7 @@ def _summaries(
     registry: NovelRegistry,
     novel: str,
     indexed: tuple[_IndexedRun, ...],
+    active_run_ids: frozenset[str],
 ) -> tuple[ChapterSummary, ...]:
     """Group configured sources and indexed runs by chapter."""
     source_index = registry.source_candidates(novel)
@@ -353,7 +376,11 @@ def _summaries(
             ChapterSummary(
                 novel,
                 chapter,
-                _chapter_state(source_paths, chapter_runs),
+                _chapter_state(
+                    source_paths,
+                    chapter_runs,
+                    any(run.run_id in active_run_ids for run in chapter_runs),
+                ),
                 sources,
                 runs,
             )
@@ -364,14 +391,20 @@ def _summaries(
 class ListNovels:
     """List configured novels with counts from sources and existing runs."""
 
-    def __init__(self, registry: NovelRegistry, workspace: Workspace) -> None:
+    def __init__(
+        self,
+        registry: NovelRegistry,
+        workspace: Workspace,
+        working_copies: WorkingCopyRepository,
+    ) -> None:
         self._registry = registry
         self._workspace = workspace
+        self._working_copies = working_copies
 
     def execute(self) -> NovelCatalog:
         """Return every registered novel, including those without runs."""
-        indexed, issues = _run_index(
-            self._workspace, self._registry.all_run_identities()
+        indexed, issues, active_run_ids = _projection(
+            self._registry, self._workspace, self._working_copies
         )
         novels: list[NovelSummary] = []
         for novel_id, config in sorted(self._registry.config.novels.items()):
@@ -380,7 +413,11 @@ class ListNovels:
                 NovelSummary(
                     novel_id,
                     config.title,
-                    len(_summaries(self._registry, novel_id, indexed)),
+                    len(
+                        _summaries(
+                            self._registry, novel_id, indexed, active_run_ids
+                        )
+                    ),
                     sum(run.novel in identities for run in indexed),
                 )
             )
@@ -390,28 +427,77 @@ class ListNovels:
 class ListChapters:
     """List aggregated chapters for one registered novel."""
 
-    def __init__(self, registry: NovelRegistry, workspace: Workspace) -> None:
+    def __init__(
+        self,
+        registry: NovelRegistry,
+        workspace: Workspace,
+        working_copies: WorkingCopyRepository,
+    ) -> None:
         self._registry = registry
         self._workspace = workspace
+        self._working_copies = working_copies
 
     def execute(self, request: ListChaptersInput) -> ChapterCatalog:
         """Return stable chapter summaries without selecting a run."""
         novel = request.novel.strip()
         self._registry.novel(novel)
-        indexed, issues = _run_index(
-            self._workspace, self._registry.all_run_identities()
+        indexed, issues, active_run_ids = _projection(
+            self._registry, self._workspace, self._working_copies
         )
         return ChapterCatalog(
-            _summaries(self._registry, novel, indexed), issues
+            _summaries(self._registry, novel, indexed, active_run_ids), issues
         )
+
+
+class ListDashboard:
+    """List every novel and chapter from one run index pass."""
+
+    def __init__(
+        self,
+        registry: NovelRegistry,
+        workspace: Workspace,
+        working_copies: WorkingCopyRepository,
+    ) -> None:
+        self._registry = registry
+        self._workspace = workspace
+        self._working_copies = working_copies
+
+    def execute(self) -> DashboardCatalog:
+        """Return all novels and their chapters without reindexing runs."""
+        indexed, issues, active_run_ids = _projection(
+            self._registry, self._workspace, self._working_copies
+        )
+        novels: list[NovelSummary] = []
+        chapters: list[ChapterSummary] = []
+        for novel_id, config in sorted(self._registry.config.novels.items()):
+            identities = self._registry.run_identities(novel_id)
+            novel_chapters = _summaries(
+                self._registry, novel_id, indexed, active_run_ids
+            )
+            chapters.extend(novel_chapters)
+            novels.append(
+                NovelSummary(
+                    novel_id,
+                    config.title,
+                    len(novel_chapters),
+                    sum(run.novel in identities for run in indexed),
+                )
+            )
+        return DashboardCatalog(tuple(novels), tuple(chapters), issues)
 
 
 class ResolveChapter:
     """Resolve one chapter's run and aggregate state from choices."""
 
-    def __init__(self, registry: NovelRegistry, workspace: Workspace) -> None:
+    def __init__(
+        self,
+        registry: NovelRegistry,
+        workspace: Workspace,
+        working_copies: WorkingCopyRepository,
+    ) -> None:
         self._registry = registry
         self._workspace = workspace
+        self._working_copies = working_copies
 
     def execute(self, request: ResolveChapterInput) -> ResolvedChapter:
         """Resolve an unambiguous run or require an explicit valid choice."""
@@ -419,8 +505,8 @@ class ResolveChapter:
             raise ValidationError("Chapter must be positive.")
         novel = request.novel.strip()
         identities = self._registry.run_identities(novel)
-        indexed, _ = _run_index(
-            self._workspace, self._registry.all_run_identities()
+        indexed, _, active_run_ids = _projection(
+            self._registry, self._workspace, self._working_copies
         )
         runs = tuple(
             run
@@ -444,7 +530,11 @@ class ResolveChapter:
         return ResolvedChapter(
             novel,
             request.chapter,
-            _chapter_state(sources, runs),
+            _chapter_state(
+                sources,
+                runs,
+                any(run.run_id in active_run_ids for run in runs),
+            ),
             selected_run.run_id if selected_run is not None else None,
             run_choices,
         )

@@ -6,15 +6,13 @@ from typing import cast
 
 from novel_translator.domain.errors import IntegrityError, ValidationError
 from novel_translator.domain.models import (
+    RUN_ID_PATTERN,
     RunCatalog,
     RunEntryError,
     RunEntryIssue,
 )
 from novel_translator.domain.translation import extract_draft_title
-from novel_translator.infrastructure.filesystem import (
-    RUN_ID_PATTERN,
-    WorkspaceStorage,
-)
+from novel_translator.infrastructure.filesystem import WorkspaceStorage
 
 
 def _safe_entry_name(name: str) -> str:

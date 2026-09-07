@@ -91,6 +91,39 @@ O export usa o título do episódio detectado no draft. Use `--title "Título"` 
 
 Durante a tradução, a CLI informa o segmento e a tentativa em andamento. Por padrão, um capítulo de até 60.000 caracteres é enviado em uma única chamada. Capítulos maiores são divididos por parágrafos; cada segmento posterior recebe os últimos 12.000 caracteres da tradução anterior somente como contexto de continuidade. Ajuste o limite com `--segment-limit CARACTERES`. Cada chamada ao provedor tem um prazo total de 90 segundos por padrão; ajuste-o com `--request-timeout SEGUNDOS`.
 
+## Interface web de revisão
+
+A Fase 3 adiciona uma sala de revisão web responsiva. A tradução ainda é
+iniciada pela CLI; dashboard, busca, leitura, working copy, preview, diff,
+revisões, aprovação, revogação e exportação ficam disponíveis no navegador.
+
+```powershell
+novel-translator-web
+```
+
+Por padrão, o servidor escuta apenas em `127.0.0.1:8000`, usa `novels.yaml`,
+o workspace `.novel-translator` e o banco SQLite
+`.novel-translator/working-copies.sqlite`. As migrações Alembic são aplicadas
+na inicialização. As opções operacionais podem ser definidas no ambiente:
+
+| Variável | Padrão | Finalidade |
+|---|---|---|
+| `NOVEL_TRANSLATOR_CATALOG` | `novels.yaml` | Catálogo versionado de novels. |
+| `NOVEL_TRANSLATOR_WORKSPACE` | `.novel-translator` | Workspace compartilhado com a CLI. |
+| `NOVEL_TRANSLATOR_DATABASE` | SQLite dentro do workspace | Banco das working copies mutáveis. |
+| `NOVEL_TRANSLATOR_WEB_HOST` | `127.0.0.1` | Interface de rede do servidor. |
+| `NOVEL_TRANSLATOR_WEB_PORT` | `8000` | Porta HTTP local. |
+| `NOVEL_TRANSLATOR_SITE_ROOT` | não definido | Checkout externo necessário para exportar. |
+
+Cada salvamento envia a identidade e a versão da working copy aberta. Se outra
+aba tiver salvo primeiro, o autosave é suspenso e o servidor mostra as duas
+versões; nenhuma versão é adotada até a escolha explícita do revisor. Uma aba
+antiga também não pode gravar sobre uma working copy recriada. O backup local
+é isolado por working copy e removido após descarte ou criação de revisão.
+Criar uma revisão congela o conteúdo e seu parent exato; o `draft.md` original
+nunca é modificado. Timestamps técnicos são exibidos explicitamente em UTC.
+
+
 ## Revisão editorial
 
 Nunca edite `draft.md` diretamente: ele é a saída imutável do modelo e seu hash é validado antes de aprovar ou exportar. Para editar um capítulo, crie uma revisão completa e imutável:
@@ -139,16 +172,16 @@ manifesto, sem duplicar conteúdo sensível.
 
 ## Arquitetura da aplicação
 
-A CLI é somente um adaptador de entrada. Os fluxos reutilizáveis pela futura
-interface web ficam em `novel_translator.application` e recebem/retornam tipos
-Python, sem dependência de Typer, FastAPI ou HTML. Regras puras ficam em
-`novel_translator.domain`; workspace, providers e a leitura de fontes
-(arquivo local e Kakuyomu) ficam em `novel_translator.infrastructure`.
+A CLI e a web são adaptadores de entrada. Os fluxos reutilizáveis ficam em
+`novel_translator.application` e recebem/retornam tipos Python, sem dependência
+de Typer, FastAPI ou HTML. Regras puras ficam em `novel_translator.domain`;
+workspace, banco SQLite, providers e leitura de fontes ficam em
+`novel_translator.infrastructure`.
 
-Os casos de uso disponíveis são `ListNovels`, `ListChapters`,
-`ResolveChapter`, `GetChapter`, `StartTranslation`, `CreateRevision`,
-`ListRevisions`, `GetDiff`, `ApproveArtifact`, `RevokeApproval` e
-`ExportArtifact`.
+Os casos de uso incluem catálogo e resolução amigável, tradução, inspeção,
+working copies com optimistic locking, criação de revisões imutáveis, diff,
+aprovação, revogação e exportação. O adaptador web usa FastAPI, Jinja2 e HTMX;
+regras editoriais não ficam nas rotas HTTP.
 
 ## Desenvolvimento
 

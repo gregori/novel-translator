@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Chapter {{ chapter }} — {{ title }}{% endblock %}
+{% block content %}
+<h1>Chapter {{ chapter }}</h1>
+<p class="subtitle">This chapter has more than one translation run. Pick the one you want to open — nothing is chosen for you.</p>
+
+<ul class="listing card run-picker">
+  {% for run in runs %}
+  <li class="choice">
+    <a class="ord" href="/novels/{{ novel }}/chapters/{{ chapter }}?run_choice={{ run.choice }}">{{ run.choice }}</a>
+    <div class="grow">
+      <div class="head">
+        <span class="chapter-link">{{ run.status|replace('_', ' ')|title }}</span>
+      </div>
+      <div class="meta">
+        {{ run.timestamp|timestamp }}
+        {% if run.model %} · {{ run.model }}{% endif %}
+        {% if run.volume %} · vol. {{ run.volume }}{% endif %}
+      </div>
+    </div>
+    <a class="btn btn-quiet" href="/novels/{{ novel }}/chapters/{{ chapter }}?run_choice={{ run.choice }}">Open</a>
+  </li>
+  {% endfor %}
+</ul>
+
+<p class="muted"><a href="/novels/{{ novel }}">Back to {{ title }}</a></p>
+{% endblock %}

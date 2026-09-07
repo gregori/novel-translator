@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Not available — Novel Translator{% endblock %}
+{% block content %}
+<div class="error-page">
+  <div class="code">{{ status }}</div>
+  <h1>That did not work</h1>
+  <p class="subtitle">{{ message }}</p>
+  <div class="toolbar">
+    <a class="btn btn-secondary" href="/">Back to the reading room</a>
+  </div>
+</div>
+{% endblock %}

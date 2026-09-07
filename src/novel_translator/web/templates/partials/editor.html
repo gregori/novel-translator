@@ -1,0 +1,85 @@
+{% if view.working_copy %}
+<div data-editor-root>
+  <form data-autosave method="post" action="{{ view.urls.save_url }}"
+        data-storage-key="{{ view.working_copy.id }}">
+    <input type="hidden" name="version" value="{{ view.working_copy.version }}">
+    <input type="hidden" name="working_copy_id" value="{{ view.working_copy.id }}">
+    <input type="hidden" name="run_choice" value="{{ view.run_choice or '' }}">
+    <div class="toolbar">
+      <span class="save-status" data-save-status data-state="idle">Autosave on</span>
+      <span class="muted">based on
+        {% if view.working_copy.base_artifact_kind.value == "revision" %}a revision
+        {% else %}the generated draft{% endif %}
+      </span>
+    </div>
+    <textarea name="content" aria-label="Working copy text"
+              spellcheck="false">
+{{ view.working_copy.content }}</textarea>
+  </form>
+
+  <div data-conflict-slot></div>
+
+  <div class="notice" data-recovery hidden>
+    <span data-recovery-text></span>
+    <div class="toolbar">
+      <button type="button" data-recovery-restore>Restore local text</button>
+      <button type="button" data-recovery-dismiss class="secondary">Dismiss</button>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <button class="btn-quiet secondary" type="button"
+            hx-get="{{ view.urls.wc_diff_url }}"
+            hx-target="#wc-diff"
+            hx-swap="innerHTML">Diff vs base</button>
+    <form method="post" action="{{ view.urls.revision_url }}"
+          class="toolbar" data-save-first data-clear-backup>
+      <input type="hidden" name="run_choice" value="{{ view.run_choice or '' }}">
+      <input type="hidden" name="working_copy_id" value="{{ view.working_copy.id }}">
+      <input type="text" name="note" placeholder="Revision note (optional)"
+             aria-label="Revision note">
+      <button type="submit">Create revision</button>
+    </form>
+    <form method="post" action="{{ view.urls.discard_url }}"
+          data-clear-backup
+          data-confirm="Discard this working copy? Unsaved edits are lost; the draft is untouched.">
+      <input type="hidden" name="run_choice" value="{{ view.run_choice or '' }}">
+      <input type="hidden" name="working_copy_id" value="{{ view.working_copy.id }}">
+      <button type="submit" class="danger">Discard</button>
+    </form>
+  </div>
+  <div id="wc-diff" class="diff-slot"></div>
+
+  {% if view.draft %}
+  <details class="tech">
+    <summary>Generated draft (read-only)</summary>
+    <div class="reading"><div class="source-text">{{ view.draft }}</div></div>
+  </details>
+  {% endif %}
+</div>
+{% elif has_draft %}
+<div class="card">
+  <p>No working copy yet. Start one to edit — the generated draft itself is never touched.</p>
+  <form method="post" action="{{ view.urls.start_url }}">
+    <input type="hidden" name="run_choice" value="{{ view.run_choice or '' }}">
+    <button>Start working copy</button>
+  </form>
+</div>
+<details class="tech">
+  <summary>Generated draft (read-only)</summary>
+  <div class="reading"><div class="source-text">{{ view.draft }}</div></div>
+</details>
+{% else %}
+<div class="empty">
+  {% if view.run_status in ("started", "translating") %}
+  Translation still in progress.
+  <div class="hint">Come back when the run completes — the draft will appear here.</div>
+  {% elif view.run_status == "failed" %}
+  The last translation attempt failed.
+  <div class="hint">Re-run the translation from the CLI; the run metadata below has details.</div>
+  {% else %}
+  No draft is available for this run.
+  <div class="hint">The technical details below may explain what happened.</div>
+  {% endif %}
+</div>
+{% endif %}

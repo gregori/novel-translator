@@ -56,6 +56,11 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
+# Novel Translator runtime database
+.novel-translator/*.sqlite
+.novel-translator/*.sqlite-wal
+.novel-translator/*.sqlite-shm
+
 
 # Translations
 *.mo

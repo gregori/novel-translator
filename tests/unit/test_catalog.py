@@ -65,6 +65,17 @@ CATALOG_YAML = """novels:
 """
 
 
+class NoWorkingCopies:
+    """Catalog port with no active editorial sessions."""
+
+    def active_run_ids(self) -> frozenset[str]:
+        """Return an empty active-run projection."""
+        return frozenset()
+
+
+NO_WORKING_COPIES = NoWorkingCopies()
+
+
 class FakeGateway:
     """Return a deterministic draft without network access."""
 
@@ -119,7 +130,7 @@ def chapter_state(
     registry: NovelRegistry, workspace: Workspace, chapter: int
 ) -> ChapterState:
     """Return one chapter state from the public listing use case."""
-    catalog = ListChapters(registry, workspace).execute(
+    catalog = ListChapters(registry, workspace, NO_WORKING_COPIES).execute(
         ListChaptersInput("test-novel")
     )
     return next(
@@ -135,8 +146,8 @@ def test_catalog_lists_registered_novel_and_source_without_runs(
     write_source(tmp_path, 7, "第七話")
     workspace = Workspace(tmp_path / "workspace")
 
-    novels = ListNovels(registry, workspace).execute()
-    chapters = ListChapters(registry, workspace).execute(
+    novels = ListNovels(registry, workspace, NO_WORKING_COPIES).execute()
+    chapters = ListChapters(registry, workspace, NO_WORKING_COPIES).execute(
         ListChaptersInput(" test-novel ")
     )
 
@@ -162,7 +173,7 @@ def test_resolver_requires_choice_for_multiple_valid_runs(
         )
         for index, source in enumerate(("第三話", "第三話 改訂"), start=1)
     ]
-    resolver = ResolveChapter(registry, workspace)
+    resolver = ResolveChapter(registry, workspace, NO_WORKING_COPIES)
 
     with pytest.raises(ValidationError, match="Multiple run candidates"):
         resolver.execute(ResolveChapterInput("test-novel", 3))
@@ -184,20 +195,20 @@ def test_run_choice_matches_the_order_listed_by_chapters(
     first = start_run(workspace, 3, "第三話")
     second = start_run(workspace, 3, "第三話 改訂")
 
-    catalog = ListChapters(registry, workspace).execute(
+    catalog = ListChapters(registry, workspace, NO_WORKING_COPIES).execute(
         ListChaptersInput("test-novel")
     )
     choices = next(item.runs for item in catalog.chapters if item.chapter == 3)
 
     assert [run.choice for run in choices] == [1, 2]
     assert (
-        ResolveChapter(registry, workspace)
+        ResolveChapter(registry, workspace, NO_WORKING_COPIES)
         .execute(ResolveChapterInput("test-novel", 3, run_choice=1))
         .run_id
         == first
     )
     assert (
-        ResolveChapter(registry, workspace)
+        ResolveChapter(registry, workspace, NO_WORKING_COPIES)
         .execute(ResolveChapterInput("test-novel", 3, run_choice=2))
         .run_id
         == second
@@ -212,10 +223,10 @@ def test_resolver_makes_no_source_observable(
     write_source(tmp_path, 7, "第七話")
     workspace = Workspace(tmp_path / "workspace")
 
-    ready = ResolveChapter(registry, workspace).execute(
+    ready = ResolveChapter(registry, workspace, NO_WORKING_COPIES).execute(
         ResolveChapterInput("test-novel", 7)
     )
-    no_source = ResolveChapter(registry, workspace).execute(
+    no_source = ResolveChapter(registry, workspace, NO_WORKING_COPIES).execute(
         ResolveChapterInput("test-novel", 99)
     )
 
@@ -301,7 +312,7 @@ def test_run_index_keeps_healthy_runs_when_an_entry_is_corrupt(
     corrupt.mkdir()
     (corrupt / "run.json").write_text("{not-json", encoding="utf-8")
 
-    catalog = ListChapters(registry, workspace).execute(
+    catalog = ListChapters(registry, workspace, NO_WORKING_COPIES).execute(
         ListChaptersInput("test-novel")
     )
 
@@ -327,14 +338,16 @@ def test_run_index_reports_foreign_incomplete_and_orphan_entries(
     incomplete = runs / ("b" * 32)
     incomplete.mkdir()
 
-    catalog = ListChapters(registry, workspace).execute(
+    catalog = ListChapters(registry, workspace, NO_WORKING_COPIES).execute(
         ListChaptersInput("test-novel")
     )
     reported = {
         (issue.entry, issue.error)
         for issue in (
             *catalog.issues,
-            *ListNovels(registry, workspace).execute().issues,
+            *ListNovels(registry, workspace, NO_WORKING_COPIES)
+            .execute()
+            .issues,
         )
     }
 
@@ -368,7 +381,7 @@ def test_editorial_failure_preserves_run_identity_and_state(
     )
     revision_metadata.write_text("{not-json", encoding="utf-8")
 
-    catalog = ListChapters(registry, workspace).execute(
+    catalog = ListChapters(registry, workspace, NO_WORKING_COPIES).execute(
         ListChaptersInput("test-novel")
     )
 
@@ -377,7 +390,7 @@ def test_editorial_failure_preserves_run_identity_and_state(
     issues = [(issue.entry, issue.error) for issue in catalog.issues]
     assert (run_id, RunEntryError.EDITORIAL) in issues
     assert (
-        ResolveChapter(registry, workspace)
+        ResolveChapter(registry, workspace, NO_WORKING_COPIES)
         .execute(ResolveChapterInput("test-novel", 6))
         .run_id
         == run_id
@@ -404,7 +417,7 @@ def test_prepare_translation_resolves_source_without_run_choice(
     assert prepared.volume == 2
     assert prepared.bible == registry.resolve_path(Path("bible.yaml"))
     third = start_run(workspace, 3, "第三話 最新")
-    catalog = ListChapters(registry, workspace).execute(
+    catalog = ListChapters(registry, workspace, NO_WORKING_COPIES).execute(
         ListChaptersInput("test-novel")
     )
     assert len(catalog.chapters[0].runs) == 3

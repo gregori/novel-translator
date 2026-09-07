@@ -10,6 +10,15 @@ busca, leitura do source, draft gerado, working copy mutável, preview, diff,
 histórico de revisões, aprovação, revogação e exportação. A tradução continua
 sendo iniciada pela CLI, como previsto para esta fase.
 
+## Estado da entrega
+
+- A implementação está aberta para revisão no PR
+  [#26 — Phase 3: add web reading and review room](https://github.com/gregori/novel-translator/pull/26).
+- O branch é `feat/phase-3-web-review-room`.
+- O commit de implementação é `fbbfaeb`
+  (`feat: add Phase 3 web reading and review room`).
+- Após o merge, novas alterações devem partir da `main` atualizada.
+
 ## Arquitetura adicionada
 
 ```text

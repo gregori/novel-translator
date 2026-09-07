@@ -1,0 +1,52 @@
+{
+  "bible_hash": "fd7209bf8a7e65b835d448019b987a70cfa88c064feccb449d66bce5a016c3a8",
+  "bible_version": "chapters-01-26",
+  "character_counts": {
+    "draft": 8992,
+    "source": 3862
+  },
+  "completed_at": "2026-09-07T00:55:04.642528+00:00",
+  "context_hash": "51e813cb8fcd905861018e2293328c88765f529b0790f0aabc1a0b3e85b0f338",
+  "draft_title": "Chapter 34: A Peaceful After-Dinner Moment at First Glance",
+  "duration_seconds": 100.428,
+  "identity": {
+    "chapter": 34,
+    "novel": "gariben"
+  },
+  "model": "deepseek-v4-flash",
+  "prompt_hash": "c6f777da80a10ec1d2aa89b5d61182d92a54778e571dc6e43c2d7d3b33a2cda1",
+  "prompt_template_hash": "fd29b0e309764333a600a2e048773d97dcd8bb15c878b482a92d538cd83fc2fa",
+  "prompt_template_version": "v1",
+  "prompt_version": "v1",
+  "provider": "opencode-go",
+  "run_id": "d03d708b1898457f85138dd04daa0189",
+  "schema_version": 2,
+  "segment_manifest": [
+    {
+      "continuity_context_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "gateway_calls": [
+        {
+          "attempt": 1,
+          "rendered_prompt_hash": "d1aee0ff9f665cef1182c5763434aa47427c35256a945164a2d9170e2cebb148"
+        },
+        {
+          "attempt": 2,
+          "rendered_prompt_hash": "d1aee0ff9f665cef1182c5763434aa47427c35256a945164a2d9170e2cebb148"
+        }
+      ],
+      "rendered_prompt_hash": "d1aee0ff9f665cef1182c5763434aa47427c35256a945164a2d9170e2cebb148",
+      "segment_index": 1,
+      "source_segment_hash": "7a0836f9146ebbddff6b94e646fdac1a2aeefe225aa6a2e6d46e874cdfc100d7"
+    }
+  ],
+  "source_hash": "7a0836f9146ebbddff6b94e646fdac1a2aeefe225aa6a2e6d46e874cdfc100d7",
+  "source_title": "第34話　一見すると平穏な食後のひと時",
+  "status": "draft_completed",
+  "timestamp": "2026-09-07T00:53:24.214707+00:00",
+  "token_estimates": {
+    "draft": 2248,
+    "method": "characters_per_token: ja=1, other_languages=4",
+    "source": 3862
+  },
+  "volume": 3
+}

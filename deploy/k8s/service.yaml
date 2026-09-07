@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: novel-translator-web
+  namespace: novel-translator
+  labels:
+    app: novel-translator-web
+spec:
+  selector:
+    app: novel-translator-web
+  ports:
+    - port: 80
+      targetPort: 8000
+  type: ClusterIP

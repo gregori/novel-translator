@@ -717,10 +717,30 @@ details.tech dd {
     min-height: 32rem;
   }
 
-  .chapter-grid {
+  /* Belt and suspenders with app.js: if a cached script sets data-active
+     without unhiding the panel, the grid would render an empty column. */
+  .chapter-grid[data-active="edit"],
+  .chapter-grid[data-active="preview"] {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 1.2rem;
     align-items: start;
+  }
+
+  .chapter-grid[data-active="edit"] #panel-source,
+  .chapter-grid[data-active="preview"] #panel-source {
+    display: block;
+  }
+
+  .shell:has(.chapter-grid[data-active="edit"]),
+  .shell:has(.chapter-grid[data-active="preview"]) {
+    max-width: 72rem;
+  }
+}
+
+@media (min-width: 80rem) {
+  .shell:has(.chapter-grid[data-active="edit"]),
+  .shell:has(.chapter-grid[data-active="preview"]) {
+    max-width: 110rem;
   }
 }

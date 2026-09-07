@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Awaitable, Callable
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 
 from novel_translator.application.approve import (
     ApproveArtifact,
@@ -78,6 +82,39 @@ def _register_filters(templates: Jinja2Templates) -> None:
     templates.env.filters["diff"] = diff_html
 
 
+_MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+class _OriginCheckMiddleware(BaseHTTPMiddleware):
+    """Refuse cross-site mutating requests with 403."""
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        if request.method in _MUTATING_METHODS:
+            # Absent Origin/Referer is allowed on purpose: modern browsers
+            # always send Origin on cross-site POSTs, while non-browser
+            # clients send neither. Ingress basic-auth remains the barrier
+            # for those; see deploy/README.md.
+            if request.headers.get("sec-fetch-site") == "cross-site":
+                return PlainTextResponse(
+                    "Cross-site request refused.", status_code=403
+                )
+            presented = request.headers.get("origin") or request.headers.get(
+                "referer"
+            )
+            if presented is not None:
+                expected = request.url.hostname or ""
+                actual = urlsplit(presented).hostname or ""
+                if actual != expected:
+                    return PlainTextResponse(
+                        "Cross-site request refused.", status_code=403
+                    )
+        return await call_next(request)
+
+
 def create_app(
     catalog_path: str | Path,
     workspace_root: str | Path,
@@ -125,6 +162,13 @@ def create_app(
     app.state.templates = templates
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
     app.include_router(routes.router)
+    app.add_middleware(_OriginCheckMiddleware)
+
+    async def _healthz() -> PlainTextResponse:
+        """Answer orchestrator probes without templates or state."""
+        return PlainTextResponse("ok")
+
+    app.add_api_route("/healthz", _healthz, include_in_schema=False)
 
     async def _application_error(
         request: Request, error: NovelTranslatorError

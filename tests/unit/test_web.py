@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
@@ -99,6 +100,27 @@ def build_client(
     database_url = f"sqlite:///{(tmp_path / 'web.sqlite').as_posix()}"
     app = create_app(config, workspace, database_url, site_root=site_root)
     return TestClient(app), workspace
+
+
+class _Panels(HTMLParser):
+    """Map the split container state and each panel to its visibility."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.grid_active: str | None = None
+        self.hidden: dict[str, bool] = {}
+
+    def handle_starttag(
+        self, tag: str, attrs: list[tuple[str, str | None]]
+    ) -> None:
+        if tag != "div":
+            return
+        names = dict(attrs)
+        if "chapter-grid" in (names.get("class") or "").split():
+            self.grid_active = names.get("data-active")
+        if names.get("role") == "tabpanel" and names.get("id"):
+            assert names["id"] is not None
+            self.hidden[names["id"]] = "hidden" in names
 
 
 def working_copy_version(html: str) -> int:
@@ -601,3 +623,64 @@ def test_multipart_crlf_save_creates_readable_revision(tmp_path: Path) -> None:
     assert revision.status_code == 303
     assert diff.status_code == 200
     assert "Line one" in diff.text
+
+
+def test_healthz_answers_without_state(tmp_path: Path) -> None:
+    """Orchestrator probes succeed without templates or workspace reads."""
+    client, _ = build_client(tmp_path)
+    response = client.get("/healthz")
+    assert response.status_code == 200
+    assert response.text == "ok"
+
+
+def test_cross_site_post_is_refused(tmp_path: Path) -> None:
+    """A foreign Origin cannot drive mutations with the reviewer's auth."""
+    client, workspace = build_client(tmp_path)
+    create_run(workspace, "a" * 32)
+    response = client.post(
+        f"{CHAPTER_URL}/working-copy",
+        data={"run_choice": ""},
+        headers={"Origin": "https://evil.example"},
+    )
+    assert response.status_code == 403
+
+
+def test_same_origin_post_starts_working_copy(tmp_path: Path) -> None:
+    """The reviewer's own Origin reaches the mutation behind the check."""
+    client, workspace = build_client(tmp_path)
+    create_run(workspace, "a" * 32)
+    response = client.post(
+        f"{CHAPTER_URL}/working-copy",
+        data={"run_choice": ""},
+        headers={"Origin": "http://testserver"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+
+def test_cross_site_fetch_metadata_is_refused(tmp_path: Path) -> None:
+    """Fetch metadata backs the Origin check when headers are stripped."""
+    client, workspace = build_client(tmp_path)
+    create_run(workspace, "a" * 32)
+    response = client.post(
+        f"{CHAPTER_URL}/working-copy",
+        data={"run_choice": ""},
+        headers={"Sec-Fetch-Site": "cross-site"},
+    )
+    assert response.status_code == 403
+
+
+def test_chapter_defaults_to_source_with_split_container(
+    tmp_path: Path,
+) -> None:
+    """Wide screens split source beside edit/preview from this structure."""
+    client, workspace = build_client(tmp_path)
+    create_run(workspace, "a" * 32)
+    panels = _Panels()
+    panels.feed(client.get(CHAPTER_URL).text)
+    assert panels.grid_active == "source"
+    assert panels.hidden == {
+        "panel-source": False,
+        "panel-edit": True,
+        "panel-preview": True,
+    }

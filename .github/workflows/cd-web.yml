@@ -54,15 +54,13 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ secrets.OCI_REGISTRY }}/${{ secrets.OCI_TENANCY_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-            ${{ secrets.OCI_REGISTRY }}/${{ secrets.OCI_TENANCY_NAMESPACE }}/${{ env.IMAGE_NAME }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Create namespace and secrets via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -85,17 +83,24 @@ jobs:
               --docker-password='${{ secrets.OCI_REGISTRY_PASSWORD }}' \
               --dry-run=client -o yaml | sudo k3s kubectl apply -f -
 
+      - name: Sync manifests via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.K8S_NODE_PUBLIC_IP }}
+          username: opc
+          key: ${{ secrets.OCI_SSH_PRIVATE_KEY }}
+          source: deploy/k8s/
+          target: /tmp/novel-translator-manifests
+          strip_components: 0
+
       - name: Render and apply manifests via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.K8S_NODE_PUBLIC_IP }}
           username: opc
           key: ${{ secrets.OCI_SSH_PRIVATE_KEY }}
-            rm -rf /tmp/novel-translator-manifests
-            git clone --depth 1 https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} /tmp/novel-translator-manifests
-            git -C /tmp/novel-translator-manifests fetch --depth 1 origin ${{ github.sha }}
-            git -C /tmp/novel-translator-manifests checkout --detach ${{ github.sha }}
-            git -C /tmp/novel-translator-manifests remote set-url origin https://github.com/${{ github.repository }}
+          script: |
+            set -o pipefail
             REGISTRY=${{ secrets.OCI_REGISTRY }}
             NAMESPACE=${{ secrets.OCI_TENANCY_NAMESPACE }}
             IMAGE=$REGISTRY/$NAMESPACE/${{ env.IMAGE_NAME }}:${{ github.sha }}

@@ -8,9 +8,9 @@ novels:
     kakuyomu_episode_root: https://kakuyomu.jp/works/16816452220316242482/episodes
     export:
       repository: gregori/novels-site
-      directory: src/content/novels/gariben
-      filename_template: "{chapter:03}.md"
+      directory: src/content/titles/gariben-kun-to-uraaka-san
+      filename_template: "chapter-{chapter:02}.md"
     translation:
       provider: opencode-go
-      model: glm-5.3-flash
+      model: deepseek-v4-flash
       default_volume: 3

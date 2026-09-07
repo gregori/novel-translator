@@ -80,7 +80,7 @@ jobs:
               --from-literal=api-key='${{ secrets.NOVEL_TRANSLATOR_API_KEY }}' \
               --dry-run=client -o yaml | sudo k3s kubectl apply -f -
             sudo k3s kubectl create secret generic novel-translator-basic-auth -n novel-translator \
-              --from-literal=users='${{ secrets.BASIC_AUTH_HTPASSWD }}' \
+              --from-literal=users='${{ secrets.BASIC_AUTH_PASSWD }}' \
               --dry-run=client -o yaml | sudo k3s kubectl apply -f -
             sudo k3s kubectl create secret docker-registry ocir-secret -n novel-translator \
               --docker-server='${{ secrets.OCI_REGISTRY }}' \

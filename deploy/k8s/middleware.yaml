@@ -5,5 +5,15 @@ metadata:
   namespace: novel-translator
 spec:
   basicAuth:
-    # htpasswd content injected by the CD workflow from BASIC_AUTH_HTPASSWD.
+    # htpasswd line injected by the CD workflow from BASIC_AUTH_PASSWD.
     secret: novel-translator-basic-auth
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: novel-translator-redirect
+  namespace: novel-translator
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true

@@ -18,21 +18,36 @@
   function wireTabs(scope) {
     var tabs = scope.querySelectorAll("[role=tab]");
     if (tabs.length === 0) return;
+    var wide = window.matchMedia("(min-width: 50rem)");
+    var current = Array.prototype.find.call(tabs, function (tab) {
+      return tab.getAttribute("aria-selected") === "true";
+    });
+    function select(tab, focus) {
+      current = tab;
+      var name = tab.id.replace(/^tab-/, "");
+      var beside = wide.matches && (name === "edit" || name === "preview");
+      tabs.forEach(function (other) {
+        var shown = other === tab || (beside && other.id === "tab-source");
+        other.setAttribute("aria-selected", shown ? "true" : "false");
+        var panel = document.getElementById(
+          other.getAttribute("aria-controls")
+        );
+        if (panel) panel.hidden = !shown;
+      });
+      var split = document.querySelector(".chapter-grid");
+      if (split) split.setAttribute("data-active", name);
+      if (focus && !REDUCED_MOTION) {
+        var active = document.getElementById(tab.getAttribute("aria-controls"));
+        if (active) active.scrollIntoView({ block: "nearest" });
+      }
+    }
     tabs.forEach(function (tab) {
       tab.addEventListener("click", function () {
-        tabs.forEach(function (other) {
-          var selected = other === tab;
-          other.setAttribute("aria-selected", selected ? "true" : "false");
-          var panel = document.getElementById(
-            other.getAttribute("aria-controls")
-          );
-          if (panel) panel.hidden = !selected;
-        });
-        if (!REDUCED_MOTION) {
-          var active = document.getElementById(tab.getAttribute("aria-controls"));
-          if (active) active.scrollIntoView({ block: "nearest" });
-        }
+        select(tab, true);
       });
+    });
+    wide.addEventListener("change", function () {
+      if (current) select(current, false);
     });
   }
 

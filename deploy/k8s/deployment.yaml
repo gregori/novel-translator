@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: novel-translator-web
+  namespace: novel-translator
+  labels:
+    app: novel-translator-web
+spec:
+  # Single replica: SQLite WAL plus workspace file locks cannot scale
+  # horizontally. Recreate avoids a second writer during rollouts.
+  # Never raise replicas without migrating state off SQLite.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: novel-translator-web
+  template:
+    metadata:
+      labels:
+        app: novel-translator-web
+    spec:
+      imagePullSecrets:
+        - name: ocir-secret
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: web
+          image: <registry>/novel-translator:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: NOVEL_TRANSLATOR_CATALOG
+              value: "/app/novels.yaml"
+            - name: NOVEL_TRANSLATOR_WORKSPACE
+              value: "/data"
+            - name: NOVEL_TRANSLATOR_DATABASE
+              value: "sqlite:////data/working-copies.sqlite"
+            - name: NOVEL_TRANSLATOR_WEB_HOST
+              value: "0.0.0.0"
+            - name: NOVEL_TRANSLATOR_WEB_PORT
+              value: "8000"
+            - name: NOVEL_TRANSLATOR_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: novel-translator-secrets
+                  key: base-url
+            - name: NOVEL_TRANSLATOR_MODEL
+              valueFrom:
+                secretKeyRef:
+                  name: novel-translator-secrets
+                  key: model
+            - name: NOVEL_TRANSLATOR_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: novel-translator-secrets
+                  key: api-key
+          volumeMounts:
+            - name: workspace
+              mountPath: /data
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 20
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: novel-translator-data

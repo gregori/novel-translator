@@ -91,6 +91,7 @@ jobs:
           host: ${{ secrets.K8S_NODE_PUBLIC_IP }}
           username: opc
           key: ${{ secrets.OCI_SSH_PRIVATE_KEY }}
+          script: |
             rm -rf /tmp/novel-translator-manifests
             git clone --depth 1 https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} /tmp/novel-translator-manifests
             git -C /tmp/novel-translator-manifests fetch --depth 1 origin ${{ github.sha }}

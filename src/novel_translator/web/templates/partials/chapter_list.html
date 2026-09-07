@@ -1,0 +1,39 @@
+{% if chapters %}
+<ul class="listing card">
+  {% for chapter in chapters %}
+  <li class="row">
+    <div class="grow">
+      <div class="head">
+        <a class="chapter-link"
+           href="/novels/{{ chapter.novel }}/chapters/{{ chapter.chapter }}">
+          Chapter {{ chapter.chapter }}</a>
+        {% if chapter.run_selection_required %}
+        <span class="badge state-in_review">{{ chapter.runs|length }} runs — choose one</span>
+        {% endif %}
+      </div>
+      <div class="meta">
+        {% if chapter.runs %}
+          latest {{ chapter.runs[-1].timestamp|timestamp }}
+          {% if chapter.runs[-1].model %} · {{ chapter.runs[-1].model }}{% endif %}
+        {% elif chapter.sources %}
+          source ready
+        {% else %}
+          no source configured
+        {% endif %}
+      </div>
+    </div>
+    <span class="badge {{ chapter.state|state_class }}">{{ chapter.state|state_label }}</span>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="empty">
+  {% if query or state %}
+  No chapters match this search.
+  <div class="hint">Clear the search or pick another state to see all chapters.</div>
+  {% else %}
+  No chapters yet.
+  <div class="hint">Add <code>chapter-N.md</code> sources or translate a chapter to populate this list.</div>
+  {% endif %}
+</div>
+{% endif %}

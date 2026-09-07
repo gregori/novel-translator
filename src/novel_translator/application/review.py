@@ -20,50 +20,47 @@ from novel_translator.infrastructure.workspace import Workspace
 from novel_translator.shared.utils import sha256_text
 
 
-def _create_revision(
+def _resolve_parent(
+    workspace: Workspace, run_id: str, parent_revision_id: str | None
+) -> RevisionParent:
+    """Resolve one verifiable parent selection into a hash-addressed
+    reference."""
+    if parent_revision_id is None:
+        if workspace.revisions.revision_records(run_id):
+            raise ValidationError(
+                "Specify --parent when the run already has revisions."
+            )
+        generated = workspace.runs.generated_draft(run_id)
+        return RevisionParent(
+            RevisionParentKind.GENERATED_DRAFT,
+            None,
+            generated.content_hash,
+            True,
+        )
+    _, artifact = workspace.revisions.revision(run_id, parent_revision_id)
+    return RevisionParent(
+        RevisionParentKind.REVISION,
+        parent_revision_id,
+        artifact.content_hash,
+        True,
+    )
+
+
+def _persist_revision(
     workspace: Workspace,
     run_id: str,
     content: str,
-    parent_revision_id: str | None = None,
-    note: str | None = None,
+    parent: RevisionParent,
+    note: str | None,
     revision_kind: RevisionKind = RevisionKind.MANUAL,
-    parent: RevisionParent | None = None,
+    revision_id: str | None = None,
 ) -> RevisionRecord:
-    """Create an immutable revision from a verified generated
-    draft or revision parent."""
+    """Persist a revision whose parent was verified in this module."""
     if not content.strip():
         raise ValidationError("Revision content must not be empty.")
-    if parent is None:
-        if parent_revision_id is None:
-            if workspace.revisions.revision_records(run_id):
-                raise ValidationError(
-                    "Specify --parent when the run already has revisions."
-                )
-            generated = workspace.runs.generated_draft(run_id)
-            parent = RevisionParent(
-                RevisionParentKind.GENERATED_DRAFT,
-                None,
-                generated.content_hash,
-                True,
-            )
-        else:
-            parent_record, parent_artifact = workspace.revisions.revision(
-                run_id, parent_revision_id
-            )
-            parent = RevisionParent(
-                RevisionParentKind.REVISION,
-                parent_record.revision_id,
-                parent_artifact.content_hash,
-                True,
-            )
-    elif parent_revision_id is not None:
-        raise ValidationError(
-            "Specify either a parent revision or an explicit parent "
-            "reference, not both."
-        )
     record = RevisionRecord(
         schema_version=1,
-        revision_id=uuid.uuid4().hex,
+        revision_id=revision_id or uuid.uuid4().hex,
         run_id=run_id,
         content_hash=sha256_text(content),
         parent=parent,
@@ -74,6 +71,45 @@ def _create_revision(
     )
     workspace.revisions.create_revision(record, content)
     return record
+
+
+def create_revision_from_artifact(
+    workspace: Workspace,
+    run_id: str,
+    content: str,
+    artifact_kind: ArtifactKind,
+    artifact_id: str | None,
+    expected_parent_hash: str,
+    note: str | None,
+    revision_id: str,
+) -> RevisionRecord:
+    """Create a revision after resolving and verifying its selected parent."""
+    if artifact_kind is ArtifactKind.GENERATED_DRAFT:
+        if artifact_id is not None:
+            raise ValidationError(
+                "Generated draft parents have no artifact ID."
+            )
+        artifact = workspace.runs.generated_draft(run_id)
+        parent_kind = RevisionParentKind.GENERATED_DRAFT
+    elif artifact_kind is ArtifactKind.REVISION:
+        if artifact_id is None:
+            raise ValidationError("Revision parents require an artifact ID.")
+        _, artifact = workspace.revisions.revision(run_id, artifact_id)
+        parent_kind = RevisionParentKind.REVISION
+    else:
+        raise ValidationError(
+            f"Unsupported parent kind: {artifact_kind.value}."
+        )
+    if artifact.content_hash != expected_parent_hash:
+        raise IntegrityError("Revision parent integrity check failed.")
+    return _persist_revision(
+        workspace,
+        run_id,
+        content,
+        RevisionParent(parent_kind, artifact_id, artifact.content_hash, True),
+        note,
+        revision_id=revision_id,
+    )
 
 
 def _revision_diff(
@@ -157,13 +193,13 @@ def _migrate_legacy_draft(
             original_hash or None,
             False,
         )
-    record = _create_revision(
+    record = _persist_revision(
         workspace,
         run_id,
         content,
-        note=note,
-        revision_kind=RevisionKind.LEGACY_PUBLISHED_SNAPSHOT,
-        parent=parent,
+        parent,
+        note,
+        RevisionKind.LEGACY_PUBLISHED_SNAPSHOT,
     )
     legacy_approval = _latest_legacy_approval(workspace, run_id)
     if (
@@ -253,11 +289,13 @@ class CreateRevision:
 
     def execute(self, request: CreateRevisionInput) -> RevisionRecord:
         """Create and persist the requested revision."""
-        return _create_revision(
+        return _persist_revision(
             self._workspace,
             request.run_id,
             request.content,
-            request.parent_revision_id,
+            _resolve_parent(
+                self._workspace, request.run_id, request.parent_revision_id
+            ),
             request.note,
         )
 

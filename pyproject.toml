@@ -9,13 +9,20 @@ description = "Auditable local CLI for assisted Japanese-to-English novel transl
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+  "alembic>=1.16",
+  "fastapi>=0.116",
   "filelock>=3.18",
   "httpx>=0.28",
+  "jinja2>=3.1",
+  "markdown-it-py>=4.0",
   "openai>=3.6.0",
   "pydantic>=2.11",
   "python-dotenv>=1.2.3",
+  "python-multipart>=0.0.20",
   "PyYAML>=6.0",
+  "sqlalchemy>=2.0",
   "typer>=0.16",
+  "uvicorn>=0.35",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +34,7 @@ dev = [
 
 [project.scripts]
 novel-translator = "novel_translator.cli.app:main"
+novel-translator-web = "novel_translator.web.app:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/novel_translator"]

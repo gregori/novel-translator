@@ -1,0 +1,31 @@
+<div class="conflict-wrap" data-version="{{ conflict.current_version }}">
+  <div class="notice warn">
+    <strong>Not saved.</strong> This chapter was updated elsewhere
+    (version {{ conflict.current_version }}). Both versions are preserved below —
+    nothing was lost.
+  </div>
+  <div class="conflict-side">
+    <h3>Your version (version {{ conflict.submitted_version }})</h3>
+    <pre>
+{{ conflict.submitted_content }}</pre>
+  </div>
+  <div class="conflict-side">
+    <h3>Saved on the server (version {{ conflict.current_version }})</h3>
+    <pre>
+{{ conflict.current_content }}</pre>
+    <input type="hidden" data-server-content value="{{ conflict.current_content }}">
+  </div>
+  <div class="toolbar">
+    <form method="post" action="{{ urls.save_url }}" data-resolve-role="mine">
+      <input type="hidden" name="version" value="{{ conflict.current_version }}">
+      <input type="hidden" name="run_choice" value="{{ run_choice or '' }}">
+      <input type="hidden" name="working_copy_id" value="{{ working_copy_id }}">
+      <button type="submit">Keep my version</button>
+    </form>
+    <form method="get" action="{{ urls.page_url }}" data-resolve-role="server">
+      <input type="hidden" name="run_choice" value="{{ run_choice or '' }}">
+      <input type="hidden" name="working_copy_id" value="{{ working_copy_id }}">
+      <button type="submit" class="secondary">Use the server version</button>
+    </form>
+  </div>
+</div>

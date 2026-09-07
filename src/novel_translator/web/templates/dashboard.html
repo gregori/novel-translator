@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Reading room — Novel Translator{% endblock %}
+{% block content %}
+<h1>Reading room</h1>
+<p class="subtitle">Translations in progress, chapters waiting for you, and what is already out.</p>
+
+{% if novels %}
+<h2>Novels</h2>
+<ul class="listing card">
+  {% for item in novels %}
+  <li class="row">
+    <div class="grow">
+      <div class="head">
+        <a class="chapter-link" href="/novels/{{ item.novel }}">{{ item.title }}</a>
+      </div>
+      <div class="meta">{{ item.chapter_count }} chapters · {{ item.run_count }} runs</div>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="empty">
+  No novels registered yet.
+  <div class="hint">Add a novel to <code>novels.yaml</code> to see it here.</div>
+</div>
+{% endif %}
+
+{% if recent %}
+<h2>Recent activity</h2>
+<ul class="listing card">
+  {% for item in recent %}
+  <li class="row">
+    <div class="grow">
+      <div class="head">
+        <a class="chapter-link" href="/novels/{{ item.novel }}/chapters/{{ item.chapter }}">
+          {{ item.novel|title }} — Chapter {{ item.chapter }}</a>
+      </div>
+      <div class="meta">{{ item.timestamp|timestamp }}</div>
+    </div>
+    <span class="badge {{ item.state|state_class }}">{{ item.state|state_label }}</span>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{% set shown = groups|selectattr("items")|list %}
+{% if shown %}
+  {% for group in shown %}
+  <h2>{{ group.title }}</h2>
+  <ul class="listing card">
+    {% for item in group.items %}
+    <li class="row">
+      <div class="grow">
+        <div class="head">
+          <a class="chapter-link" href="/novels/{{ item.novel }}/chapters/{{ item.chapter }}">
+            {{ item.novel|title }} — Chapter {{ item.chapter }}</a>
+        </div>
+        {% if item.timestamp %}<div class="meta">{{ item.timestamp|timestamp }}</div>{% endif %}
+      </div>
+      <span class="badge {{ item.state|state_class }}">{{ item.state|state_label }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endfor %}
+{% elif novels %}
+<div class="empty">
+  Nothing waiting right now.
+  <div class="hint">Translate a chapter from the CLI to start a review here.</div>
+</div>
+{% endif %}
+
+{% if issues %}
+<details class="tech">
+  <summary>Skipped run entries ({{ issues|length }})</summary>
+  <ul class="listing">
+    {% for issue in issues %}
+    <li class="row"><div class="grow code">{{ issue.entry }}</div><span class="badge">{{ issue.error.value }}</span></li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}
+{% endblock %}

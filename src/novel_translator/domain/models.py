@@ -1,8 +1,12 @@
-"""Shared immutable value objects."""
+"""Shared immutable value objects and identity contracts."""
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum, StrEnum
+
+RUN_ID_PATTERN = re.compile(r"[0-9a-f]{32}")
+"""Canonical run and revision identifier contract."""
 
 
 class RunStatus(StrEnum):
@@ -227,3 +231,18 @@ class EditorialArtifact:
     artifact_id: str | None
     content: str
     content_hash: str
+
+
+@dataclass(frozen=True, slots=True)
+class WorkingCopy:
+    """One mutable editing session over a verified base artifact."""
+
+    id: str
+    run_id: str
+    base_artifact_kind: ArtifactKind
+    base_artifact_id: str | None
+    base_content_hash: str
+    content: str
+    version: int
+    created_at: str
+    updated_at: str

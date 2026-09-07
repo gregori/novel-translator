@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} — Novel Translator{% endblock %}
+{% block content %}
+<h1>{{ title }}</h1>
+<p class="subtitle">{{ total }} chapters · {{ novel }}</p>
+
+<form class="search-form"
+      hx-get="/novels/{{ novel }}"
+      hx-target="#chapter-results"
+      hx-push-url="true">
+  <input type="search" name="q" value="{{ query }}"
+         placeholder="Find a chapter number…"
+         aria-label="Search chapters">
+  {% if state %}<input type="hidden" name="state" value="{{ state }}">{% endif %}
+  <button type="submit" class="secondary">Search</button>
+</form>
+
+<div class="filter-chips" role="navigation" aria-label="Filter by state">
+  <a href="/novels/{{ novel }}"
+     {% if not state %}aria-current="true"{% endif %}
+     hx-get="/novels/{{ novel }}"
+     hx-include="[name=q]"
+     hx-target="#chapter-results"
+     hx-push-url="true">All</a>
+  {% for item_state, count in counts %}
+    {% if count %}
+    <a href="/novels/{{ novel }}?state={{ item_state.value }}"
+       {% if state == item_state.value %}aria-current="true"{% endif %}
+       hx-get="/novels/{{ novel }}?state={{ item_state.value }}"
+       hx-include="[name=q]"
+       hx-target="#chapter-results"
+       hx-push-url="true">{{ item_state|state_label }} ({{ count }})</a>
+    {% endif %}
+  {% endfor %}
+</div>
+
+<div id="chapter-results">
+  {% include "partials/chapter_list.html" %}
+</div>
+
+{% if issues %}
+<details class="tech">
+  <summary>Skipped run entries ({{ issues|length }})</summary>
+  <ul class="listing">
+    {% for issue in issues %}
+    <li class="row"><div class="grow code">{{ issue.entry }}</div><span class="badge">{{ issue.error.value }}</span></li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}
+{% endblock %}

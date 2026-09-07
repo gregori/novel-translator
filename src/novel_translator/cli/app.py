@@ -49,6 +49,7 @@ from novel_translator.domain.errors import (
 )
 from novel_translator.domain.models import ChapterIdentity
 from novel_translator.infrastructure.catalog import load_catalog
+from novel_translator.infrastructure.database import Database
 from novel_translator.infrastructure.export import FilesystemArtifactWriter
 from novel_translator.infrastructure.providers import (
     OpenCodeGoConfig,
@@ -58,6 +59,9 @@ from novel_translator.infrastructure.source import (
     load_bible,
     read_revision_input,
     read_source,
+)
+from novel_translator.infrastructure.working_copies import (
+    SqlAlchemyWorkingCopyRepository,
 )
 from novel_translator.infrastructure.workspace import Workspace
 
@@ -73,6 +77,15 @@ def fail(error: NovelTranslatorError) -> NoReturn:
     """Render an expected error without exposing secrets."""
     typer.echo(f"Error: {error}", err=True)
     raise typer.Exit(2)
+
+
+def _working_copies(
+    workspace: Path,
+) -> SqlAlchemyWorkingCopyRepository:
+    """Open the workspace's working copy store, migrating as needed."""
+    database = Database(str(workspace / "working-copies.sqlite"))
+    database.prepare()
+    return SqlAlchemyWorkingCopyRepository(database)
 
 
 def resolve_run_id(
@@ -93,7 +106,9 @@ def resolve_run_id(
     if novel is None or chapter is None:
         raise ValidationError("Provide RUN_ID or both --novel and --chapter.")
     resolved = ResolveChapter(
-        load_catalog(config), Workspace(workspace)
+        load_catalog(config),
+        Workspace(workspace),
+        _working_copies(workspace),
     ).execute(ResolveChapterInput(novel, chapter, run_choice))
     if resolved.run_id is None:
         raise ValidationError("The selected chapter has no translation run.")
@@ -110,7 +125,9 @@ def novels(
     """List registered novels without exposing run identifiers."""
     try:
         catalog = ListNovels(
-            load_catalog(config), Workspace(workspace)
+            load_catalog(config),
+            Workspace(workspace),
+            _working_copies(workspace),
         ).execute()
     except NovelTranslatorError as error:
         fail(error)
@@ -137,7 +154,9 @@ def chapters(
     """List chapter states and ordinal choices without full run IDs."""
     try:
         catalog = ListChapters(
-            load_catalog(config), Workspace(workspace)
+            load_catalog(config),
+            Workspace(workspace),
+            _working_copies(workspace),
         ).execute(ListChaptersInput(novel))
     except NovelTranslatorError as error:
         fail(error)

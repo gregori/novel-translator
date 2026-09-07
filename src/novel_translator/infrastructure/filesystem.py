@@ -1,14 +1,12 @@
 """Safe atomic filesystem primitives for workspace repositories."""
 
 import os
-import re
 import tempfile
 from contextlib import suppress
 from pathlib import Path
 
 from novel_translator.domain.errors import IntegrityError, ValidationError
-
-RUN_ID_PATTERN = re.compile(r"[0-9a-f]{32}")
+from novel_translator.domain.models import RUN_ID_PATTERN
 
 
 class WorkspaceStorage:

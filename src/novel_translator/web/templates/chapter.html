@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}Chapter {{ view.chapter }} — {{ view.title }}{% endblock %}
+{% block content %}
+<h1>Chapter {{ view.chapter }}</h1>
+<div class="toolbar">
+  <span class="badge state-{{ view.state_key }}">{{ view.state }}</span>
+  <span class="muted"><a href="/novels/{{ view.novel }}">{{ view.title }}</a></span>
+</div>
+
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+{% if not has_run %}
+  <div class="empty">
+    This chapter has no translation run yet.
+    <div class="hint">
+      Start one from the CLI:
+      <code>novel-translator translate --novel {{ view.novel }} --chapter {{ view.chapter }}</code>
+    </div>
+  </div>
+  {% if view.source %}
+  <h2>Source</h2>
+  <div class="card reading"><div class="source-text">{{ view.source }}</div></div>
+  {% endif %}
+{% else %}
+
+<div class="tabs" role="tablist">
+  <button class="tab" role="tab" id="tab-source" aria-controls="panel-source"
+          aria-selected="true">Source</button>
+  <button class="tab" role="tab" id="tab-edit" aria-controls="panel-edit"
+          aria-selected="false">Edit</button>
+  <button class="tab" role="tab" id="tab-preview" aria-controls="panel-preview"
+          aria-selected="false">Preview</button>
+</div>
+
+<div id="panel-source" role="tabpanel" aria-labelledby="tab-source">
+  {% if view.source %}
+  <div class="card reading"><div class="source-text">{{ view.source }}</div></div>
+  {% else %}
+  <div class="empty">
+    The source text for this run is not readable.
+    <div class="hint">It may be a legacy run; the technical details below tell more.</div>
+  </div>
+  {% endif %}
+</div>
+
+<div id="panel-edit" role="tabpanel" aria-labelledby="tab-edit" hidden>
+  {% include "partials/editor.html" %}
+</div>
+
+<div id="panel-preview" role="tabpanel" aria-labelledby="tab-preview" hidden>
+  {% if view.working_copy %}
+    {% set preview_content = view.working_copy.content %}
+  {% elif view.draft %}
+    {% set preview_content = view.draft %}
+  {% else %}
+    {% set preview_content = none %}
+  {% endif %}
+  {% if preview_content %}
+  <div class="card reading" id="preview-target">{{ preview_content|markdown|safe }}</div>
+  <div class="toolbar">
+    <button class="btn-quiet secondary"
+            hx-get="{{ view.urls.preview_url }}"
+            hx-target="#preview-target"
+            hx-swap="innerHTML">Refresh preview</button>
+  </div>
+  {% else %}
+  <div class="empty">
+    Nothing to preview yet.
+    <div class="hint">The draft appears here once the translation finishes.</div>
+  </div>
+  {% endif %}
+</div>
+
+<h2>History</h2>
+<ul class="listing card">
+  {% if has_draft %}
+  <li class="row">
+    <div class="grow">
+      <div class="head"><span class="chapter-link">Generated draft</span>
+        {% if draft_approved %}<span class="badge state-approved">Approved</span>{% endif %}
+      </div>
+      <div class="meta">The machine translation, never editable.</div>
+    </div>
+    <div class="toolbar">
+      <form class="inline" method="post" action="{{ view.urls.approval_url }}">
+        <input type="hidden" name="run_choice" value="{{ view.run_choice or '' }}">
+        <button class="btn-quiet">Approve</button>
+      </form>
+      <form class="inline" method="post" action="{{ view.urls.revoke_url }}">
+        <input type="hidden" name="run_choice" value="{{ view.run_choice or '' }}">
+        <button class="btn-quiet secondary">Revoke</button>
+      </form>
+    </div>
+  </li>
+  {% endif %}
+  {% for revision in view.revisions %}
+  <li class="row">
+    <div class="grow">
+      <div class="head">
+        <span class="chapter-link">Revision {{ revision.ordinal }}</span>
+        {% if revision.approved %}<span class="badge state-approved">Approved</span>{% endif %}
+      </div>
+      <div class="meta">{{ revision.created_at }}{% if revision.note %} · {{ revision.note }}{% endif %}</div>
+      <div class="diff-slot"></div>
+    </div>
+    <div class="toolbar">
+      {% if revision.approved %}
+      <form class="inline" method="post" action="{{ view.urls.revoke_url }}">
+        <input type="hidden" name="run_choice" value="{{ view.run_choice or '' }}">
+        <input type="hidden" name="revision" value="{{ revision.ordinal }}">
+        <button class="btn-quiet secondary">Revoke</button>
+      </form>
+      {% else %}
+      <form class="inline" method="post" action="{{ view.urls.approval_url }}">
+        <input type="hidden" name="run_choice" value="{{ view.run_choice or '' }}">
+        <input type="hidden" name="revision" value="{{ revision.ordinal }}">
+        <button class="btn-quiet">Approve</button>
+      </form>
+      {% endif %}
+      <button class="btn-quiet secondary"
+              hx-get="/novels/{{ view.novel }}/chapters/{{ view.chapter }}/revisions/{{ revision.ordinal }}/diff{% if view.run_choice %}?run_choice={{ view.run_choice }}{% endif %}"
+              hx-target="closest li .diff-slot"
+              hx-swap="innerHTML">Diff</button>
+    </div>
+  </li>
+  {% endfor %}
+  {% if not view.revisions and not has_draft %}
+  <li class="row"><div class="grow muted">
+    {% if view.run_status in ("translating", "started") %}
+    Translation still in progress — the draft will appear here.
+    {% else %}
+    No immutable artifacts yet.
+    {% endif %}
+  </div></li>
+  {% endif %}
+</ul>
+
+{% if view.revisions or has_draft %}
+<h2>Export</h2>
+<div class="card">
+  <p class="muted">Writes the approved artifact into the configured site checkout.</p>
+  <form method="post" action="{{ view.urls.export_url }}" class="toolbar">
+    <input type="hidden" name="run_choice" value="{{ view.run_choice or '' }}">
+    {% if view.revisions %}
+    <select name="revision" aria-label="Artifact to export">
+      {% for revision in view.revisions %}
+      <option value="{{ revision.ordinal }}" {% if revision.approved %}selected{% endif %}>
+        Revision {{ revision.ordinal }}{% if revision.approved %} — approved{% endif %}
+      </option>
+      {% endfor %}
+      {% if has_draft %}<option value="">Generated draft</option>{% endif %}
+    </select>
+    {% endif %}
+    <label class="muted"><input type="checkbox" name="overwrite"> replace existing file</label>
+    <button type="submit">Export</button>
+  </form>
+</div>
+{% endif %}
+
+{% if view.technical %}
+<details class="tech">
+  <summary>Technical details</summary>
+  <dl>
+    {% for key, value in view.technical %}
+    <dt>{{ key|replace('_', ' ') }}</dt>
+    <dd>{{ value }}</dd>
+    {% endfor %}
+  </dl>
+</details>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -20,7 +20,7 @@ documentation stays in Portuguese, as `REQUIREMENTS.md` requires.
 Python code **must** pass the quality gates listed in
 "Mandatory review after work".
 
-## Lessons learned from phases 1–3
+## Lessons learned from phases 1–4
 
 ### Phase 1 — Application layer and immutable artifacts
 
@@ -87,6 +87,30 @@ Python code **must** pass the quality gates listed in
   prefixes or implementation text. Exercise real multipart forms, CRLF,
   multiple runs, stale tabs, partial cross-store failures, and exact artifact
   approvals.
+
+### Phase 4 — Remote operation on k3s
+
+- Single replica plus `strategy: Recreate` wherever SQLite/filelocks back
+  the app; RollingUpdate silently doubles writers on every rollout.
+- Remote shell steps need `set -o pipefail`; a trailing cleanup command
+  masks mid-script failures as success.
+- Single-quote every `--from-literal` carrying secrets; double quotes let
+  the remote bash expand `$` inside hashes and tokens.
+- `kubectl run --overrides` merge-patches: the override container must
+  reuse the generated name with explicit `command`/`stdin`, or the
+  payload never runs and exits 0. Prefer sleeper + `cp` + `exec` for
+  PVC transfers; guard scale-to-zero scripts with `trap EXIT` restore.
+- Render one declarative rollout (image tag in the manifest), never
+  apply `:latest` plus imperative `set image`.
+- `iptables` is blind to native nftables on k3s nodes; `nft list ruleset`
+  is the source of truth for port delivery.
+- cert-manager HTTP-01 self-check fails on NAT hairpin; fix with a
+  CoreDNS NodeHosts entry to Traefik's ClusterIP (in-cluster only).
+- Traefik basic-auth values must be `user:hash` lines; a bare hash drops
+  the whole router as 404 — debug Traefik logs, not the app.
+- Runbooks must say where each command runs (node vs local machine).
+- Template regression tests parse attributes; substring assertions on
+  `hidden` fail for unrelated reasons.
 
 ## Self-learning
 

@@ -11,6 +11,7 @@ read by :func:`main`:
 - ``NOVEL_TRANSLATOR_MODEL`` (default ``default``)
 - ``NOVEL_TRANSLATOR_API_KEY`` (default empty)
 - ``NOVEL_TRANSLATOR_PROVIDER`` (default ``opencode-go``)
+- ``NOVEL_TRANSLATOR_REQUEST_TIMEOUT`` (default ``300.0`` seconds)
 - ``NOVEL_TRANSLATOR_POLL_SECONDS`` (default ``5.0``)
 - ``NOVEL_TRANSLATOR_HEARTBEAT_SECONDS`` (default ``30.0``)
 - ``NOVEL_TRANSLATOR_STALE_SECONDS`` (default ``120.0``)
@@ -84,6 +85,7 @@ class WorkerConfig:
     model: str
     api_key: str
     provider: str = "opencode-go"
+    request_timeout_seconds: float = 300.0
     poll_seconds: float = 5.0
     heartbeat_seconds: float = 30.0
     stale_seconds: float = 120.0
@@ -256,6 +258,7 @@ def _execute_claimed(
             base_url=config.base_url,
             model=model_name,
             api_key=config.api_key,
+            timeout_seconds=config.request_timeout_seconds,
         ),
     )
     workspace = Workspace(config.workspace_root)
@@ -280,6 +283,14 @@ def _execute_claimed(
                 progress=(
                     lambda current, total, _a: _watch_progress(
                         store, job.job_id, current, total
+                    )
+                ),
+                retry_notice=(
+                    lambda current, total, attempt, error: print(
+                        f"job {job.job_id} segment {current}/{total} "
+                        f"attempt {attempt}: {type(error).__name__}: "
+                        f"{error}",
+                        flush=True,
                     )
                 ),
             )
@@ -379,7 +390,9 @@ def _load_config(workspace_default: str = ".novel-translator") -> WorkerConfig:
         model=_env("NOVEL_TRANSLATOR_MODEL", "default"),
         api_key=_env("NOVEL_TRANSLATOR_API_KEY", ""),
         provider=_env("NOVEL_TRANSLATOR_PROVIDER", "opencode-go"),
-        poll_seconds=_env_float("NOVEL_TRANSLATOR_POLL_SECONDS", 5.0),
+        request_timeout_seconds=_env_float(
+            "NOVEL_TRANSLATOR_REQUEST_TIMEOUT", 300.0
+        ),
         heartbeat_seconds=_env_float(
             "NOVEL_TRANSLATOR_HEARTBEAT_SECONDS", 30.0
         ),

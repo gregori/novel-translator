@@ -745,3 +745,82 @@ details.tech dd {
     max-width: 110rem;
   }
 }
+
+/* ---------- Top navigation ---------- */
+
+.masthead .topnav {
+  display: flex;
+  gap: 0.9rem;
+  margin-left: auto;
+  font-size: 0.9rem;
+}
+
+.masthead .logout {
+  margin: 0;
+}
+
+/* ---------- Forms (translate, sign-in) ---------- */
+
+input[type="number"],
+input[type="password"],
+input[type="file"] {
+  font-family: var(--font-ui);
+  font-size: 1rem;
+  color: var(--ink);
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.55rem 0.7rem;
+  min-height: var(--tap);
+}
+
+form.card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+form.card label {
+  font-weight: 600;
+  margin-top: 0.4rem;
+}
+
+form.card fieldset {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.8rem;
+  margin-top: 0.6rem;
+  min-width: 0;
+}
+
+form.card .choice {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  font-weight: 400;
+  margin-top: 0.45rem;
+}
+
+form.card input[type="radio"] {
+  min-height: 1.2rem;
+  min-width: 1.2rem;
+  flex-shrink: 0;
+}
+
+form.card input[type="file"] {
+  max-width: 100%;
+}
+
+form.card select {
+  max-width: 100%;
+}
+
+@media (max-width: 30rem) {
+  .masthead {
+    flex-wrap: wrap;
+  }
+
+  .masthead .tagline {
+    display: none;
+  }
+}

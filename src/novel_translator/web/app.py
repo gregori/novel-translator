@@ -27,6 +27,13 @@ from novel_translator.application.catalog import (
 )
 from novel_translator.application.export import ExportArtifact
 from novel_translator.application.inspect import ReadChapterForReview
+from novel_translator.application.jobs import (
+    EnqueueTranslation,
+    GetTranslationJob,
+    ListTranslationJobs,
+    RequestJobCancellation,
+    RetryTranslationJob,
+)
 from novel_translator.application.review import GetDiff, ListRevisions
 from novel_translator.application.working_copy import (
     CreateRevisionFromWorkingCopy,
@@ -45,14 +52,21 @@ from novel_translator.domain.errors import (
 from novel_translator.infrastructure.catalog import load_catalog
 from novel_translator.infrastructure.database import Database
 from novel_translator.infrastructure.export import FilesystemArtifactWriter
+from novel_translator.infrastructure.jobs import (
+    SqlAlchemyTranslationJobRepository,
+)
 from novel_translator.infrastructure.working_copies import (
     SqlAlchemyWorkingCopyRepository,
 )
 from novel_translator.infrastructure.workspace import Workspace
 from novel_translator.web import routes
+from novel_translator.web.auth import AuthMiddleware, build_auth_state
+from novel_translator.web.routes.auth import router as auth_router
+from novel_translator.web.routes.translate import router as translate_router
 from novel_translator.web.services import Services
 from novel_translator.web.viewmodels import (
     diff_html,
+    format_elapsed,
     format_timestamp,
     render_markdown,
     state_class,
@@ -78,6 +92,7 @@ def _register_filters(templates: Jinja2Templates) -> None:
     templates.env.filters["state_label"] = state_label
     templates.env.filters["state_class"] = state_class
     templates.env.filters["timestamp"] = format_timestamp
+    templates.env.filters["elapsed"] = format_elapsed
     templates.env.filters["markdown"] = render_markdown
     templates.env.filters["diff"] = diff_html
 
@@ -96,8 +111,8 @@ class _OriginCheckMiddleware(BaseHTTPMiddleware):
         if request.method in _MUTATING_METHODS:
             # Absent Origin/Referer is allowed on purpose: modern browsers
             # always send Origin on cross-site POSTs, while non-browser
-            # clients send neither. Ingress basic-auth remains the barrier
-            # for those; see deploy/README.md.
+            # clients send neither. The signed session cookie remains
+            # the barrier for those; see deploy/README.md.
             if request.headers.get("sec-fetch-site") == "cross-site":
                 return PlainTextResponse(
                     "Cross-site request refused.", status_code=403
@@ -127,6 +142,11 @@ def create_app(
     database = Database(database_url)
     database.prepare()
     working_copies = SqlAlchemyWorkingCopyRepository(database)
+    job_store = SqlAlchemyTranslationJobRepository(database)
+    auth = build_auth_state(
+        os.environ.get("NOVEL_TRANSLATOR_AUTH_PASSWORD_HASH"),
+        os.environ.get("NOVEL_TRANSLATOR_SESSION_SECRET"),
+    )
     services = Services(
         registry=registry,
         list_dashboard=ListDashboard(registry, workspace, working_copies),
@@ -148,6 +168,11 @@ def create_app(
         create_revision_from_working_copy=CreateRevisionFromWorkingCopy(
             workspace, working_copies
         ),
+        enqueue_translation=EnqueueTranslation(job_store),
+        get_translation_job=GetTranslationJob(job_store),
+        list_translation_jobs=ListTranslationJobs(job_store),
+        cancel_translation_job=RequestJobCancellation(job_store),
+        retry_translation_job=RetryTranslationJob(job_store),
         site_root=Path(site_root).resolve() if site_root is not None else None,
     )
     app = FastAPI(
@@ -156,12 +181,16 @@ def create_app(
         redoc_url=None,
         openapi_url=None,
     )
+    app.state.auth = auth
     app.state.services = services
     templates = Jinja2Templates(directory=str(TEMPLATES))
     _register_filters(templates)
     app.state.templates = templates
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
+    app.include_router(auth_router)
+    app.include_router(translate_router)
     app.include_router(routes.router)
+    app.add_middleware(AuthMiddleware)
     app.add_middleware(_OriginCheckMiddleware)
 
     async def _healthz() -> PlainTextResponse:
@@ -233,4 +262,8 @@ def main() -> None:
         app,
         host=os.environ.get("NOVEL_TRANSLATOR_WEB_HOST", "127.0.0.1"),
         port=int(os.environ.get("NOVEL_TRANSLATOR_WEB_PORT", "8000")),
+        # Traefik terminates TLS in front of this pod, so the client IP
+        # and scheme come from its proxy headers. The pod is reachable
+        # only through the ClusterIP service, never directly.
+        forwarded_allow_ips="*",
     )

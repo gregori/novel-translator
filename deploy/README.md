@@ -7,8 +7,11 @@ revisão no mesmo nó k3s que já roda o dojo-full. Segue o padrão do
 
 ## Arquitetura
 
-- 1 `Deployment` com `replicas: 1`. Réplica única é obrigatória:
-  SQLite WAL e filelocks do workspace não suportam horizontal.
+- 1 `Deployment` com `replicas: 1` e 2 containers no mesmo Pod:
+  `web` (FastAPI) e `worker` (`novel-translator-worker`). Réplica única
+  é obrigatória: SQLite WAL e filelocks do workspace não suportam
+  horizontal; os dois containers dividem o mesmo `/data` e o mesmo
+  banco, com sessões curtas e reserva atômica de jobs.
 - 1 `PVC` `local-path` de 5Gi montado em `/data` (runs, editorial,
   `working-copies.sqlite`). Configuração (`novels.yaml`, `config/`,
   `novel-sources/`) vai assada na imagem; estado mutável fica no PVC.
@@ -16,27 +19,39 @@ revisão no mesmo nó k3s que já roda o dojo-full. Segue o padrão do
   desabilitada (o botão retorna 400 orientando). Publicação no
   `novels-site` continua manual até a Fase 6 (bot com Deploy Key
   abrindo PR, nunca push direto).
-- Tradução continua pela CLI nesta fase; o worker persistente chega na
-  Fase 5. Como a CLI roda contra o workspace local e a sala lê `/data`
-  no PVC, é preciso semear o PVC (ver “Semeando runs” abaixo); a partir
-  daí o PVC é a cópia autoritativa.
+- Traduções partem da página `/translate`: o `web` enfileira um job
+  persistente e o `worker` executa o caso de uso `StartTranslation`.
+  Fechar o navegador não interrompe; a página do job atualiza por
+  polling HTMX. Como o PVC é a cópia autoritativa, semear o PVC
+  continua necessário uma vez (ver “Semeando runs” abaixo).
 
 ## Proteção de acesso
 
-Ao contrário do dojo (Ingress público sem auth), esta sala fica atrás de
-basicAuth do Traefik (`middleware.yaml`), porque qualquer pessoa com a
-URL poderia aprovar e exportar capítulos. Por isso, além do basicAuth:
+Sem basicAuth do Traefik: a sala tem login próprio, de senha única,
+em página mobile-friendly (`/login`), com sessão em cookie assinado
+(HMAC-SHA256, 30 dias, `HttpOnly`, `SameSite=Lax`, `Secure` sob
+HTTPS) e botão de saída no topo. Por isso, além do login:
 
 - POST/PUT/PATCH/DELETE com `Origin`/`Referer` de outro host recebem
-  403 (as credenciais de basic-auth seriam reenviadas sozinhas pelo
-  navegador num ataque CSRF);
-- sem cookies de sessão, sem docs automáticos (`docs_url` desligado).
+  403 (o cookie de sessão seria reenviado sozinho pelo navegador num
+  ataque CSRF);
+- sem docs automáticos (`docs_url` desligado);
+- `/healthz` continua público para as probes do Kubernetes;
+- após 10 senhas erradas em 5 minutos o IP recebe 429.
 
-Gere o htpasswd e guarde no secret `BASIC_AUTH_PASSWD`:
+Gere o hash da senha e o segredo de sessão e guarde nos secrets
+`NOVEL_TRANSLATOR_AUTH_PASSWORD_HASH` e
+`NOVEL_TRANSLATOR_SESSION_SECRET`:
 
 ```bash
-htpasswd -nbB reviewer 'sua-senha-forte'
+python -c "from getpass import getpass; from novel_translator.web.auth import hash_password; print(hash_password(getpass()))"
+python -c "import secrets; print(secrets.token_hex(32))"
 ```
+
+Sem essas duas variáveis a sala abre sem login (modo dev local).
+No cluster elas são obrigatórias. Trocar o `session-secret`
+desconecta todos os navegadores.
+
 
 ## Secrets do GitHub (repositório `gregori/novel-translator`)
 
@@ -50,10 +65,11 @@ Reusar os mesmos valores do dojo onde indicado:
 | `OCI_REGISTRY_USERNAME` | mesmo do dojo |
 | `OCI_REGISTRY_PASSWORD` | mesmo do dojo |
 | `OCI_TENANCY_NAMESPACE` | mesmo do dojo |
-| `NOVEL_TRANSLATOR_BASE_URL` | endpoint do provider LLM |
+| `NOVEL_TRANSLATOR_BASE_URL` | endpoint do provider LLM (alcançável de dentro do cluster; `localhost` não serve) |
 | `NOVEL_TRANSLATOR_MODEL` | modelo configurado |
 | `NOVEL_TRANSLATOR_API_KEY` | chave do provider (só no servidor) |
-| `BASIC_AUTH_PASSWD` | linha `reviewer:$apr1$...` do `htpasswd` acima |
+| `NOVEL_TRANSLATOR_AUTH_PASSWORD_HASH` | hash scrypt da senha (`hash_password`) |
+| `NOVEL_TRANSLATOR_SESSION_SECRET` | 32+ chars aleatórios (ex. `secrets.token_hex(32)`) |
 | `INGRESS_HOST` | ex. `novels.gregori.eti.br` (apontar o DNS ao nó) |
 
 ## Primeiro deploy
@@ -61,8 +77,8 @@ Reusar os mesmos valores do dojo onde indicado:
 1. Apontar `INGRESS_HOST` no DNS para o IP público do nó.
 2. Cadastrar os secrets acima no GitHub.
 3. Push na `main` (ou `workflow_dispatch` em `CD - Deploy Web`).
-4. Abrir `https://<INGRESS_HOST>/healthz` — deve responder `ok` após o
-   basicAuth.
+4. Abrir `https://<INGRESS_HOST>/login` — após o login, o dashboard
+   mostra a sala; `/healthz` responde `ok` sem login (probes).
 
 ## Semeando runs
 
@@ -77,9 +93,10 @@ tar czf - -C .novel-translator . | sudo k3s kubectl run seed-copy --rm -i \
   --overrides='{"spec":{"volumes":[{"name":"workspace","persistentVolumeClaim":{"claimName":"novel-translator-data"}}],"containers":[{"name":"seed-copy","image":"busybox:1.36","stdin":true,"command":["tar","xzf","-","-C","/data"],"volumeMounts":[{"name":"workspace","mountPath":"/data"}]}]}}'
 ```
 
-Volte a 1 réplica e confira o dashboard. Depois disso, traduza pela CLI
-e repita o envio, ou rode a CLI com o workspace apontando para uma cópia
-sincronizada — o PVC é a cópia autoritativa da sala.
+Volte a 1 réplica e confira o dashboard. Depois disso, prefira traduzir
+pela página `/translate` da própria sala — o worker escreve direto no
+PVC, sem nova semeadura. A CLI continua servindo para operação local;
+nesse caso repita o envio acima (o PVC segue autoritativo).
 
 ## Backup e restore
 

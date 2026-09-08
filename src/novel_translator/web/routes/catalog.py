@@ -24,10 +24,15 @@ router = APIRouter()
 
 @router.get("/", response_class=HTMLResponse, name="dashboard")
 def dashboard(request: Request) -> HTMLResponse:
-    """Show novels, recent chapters, and state groups."""
+    """Show novels, recent chapters, state groups, and active jobs."""
     services: Services = request.app.state.services
     templates = request.app.state.templates
     catalog = services.dashboard()
+    jobs = [
+        job
+        for job in services.list_translation_jobs.execute()
+        if job.status.value in ("queued", "running", "cancel_requested")
+    ]
     return templates.TemplateResponse(
         request,
         "dashboard.html",
@@ -36,6 +41,7 @@ def dashboard(request: Request) -> HTMLResponse:
             "issues": catalog.issues,
             "recent": recent_chapters(catalog.chapters),
             "groups": dashboard_groups(catalog.chapters),
+            "active_jobs": jobs,
         },
     )
 

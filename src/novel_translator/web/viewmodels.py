@@ -61,6 +61,31 @@ def format_timestamp(value: str | None) -> str:
     return f"{moment.astimezone(UTC):%Y-%m-%d %H:%M} UTC"
 
 
+def format_elapsed(value: str | None) -> str:
+    """Render one ISO timestamp as a relative age for progress views."""
+    if not value:
+        return "—"
+    try:
+        moment = datetime.fromisoformat(value)
+    except ValueError:
+        return value
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    seconds = max(
+        0, int((datetime.now(UTC) - moment.astimezone(UTC)).total_seconds())
+    )
+    if seconds < 60:
+        return "just now"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours} hour{'s' if hours != 1 else ''} ago"
+    days = hours // 24
+    return f"{days} day{'s' if days != 1 else ''} ago"
+
+
 def render_markdown(content: str) -> str:
     """Render chapter Markdown to safe HTML.
 

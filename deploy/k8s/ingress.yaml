@@ -5,7 +5,7 @@ metadata:
   namespace: novel-translator
   annotations:
     traefik.ingress.kubernetes.io/router.middlewares: >-
-      novel-translator-novel-translator-redirect@kubernetescrd,novel-translator-novel-translator-auth@kubernetescrd
+      novel-translator-novel-translator-redirect@kubernetescrd
 spec:
   ingressClassName: traefik
   tls:

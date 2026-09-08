@@ -1,0 +1,33 @@
+<div id="job-status"
+{% if active %}hx-get="{{ status_url }}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+  <div class="card">
+    {% if job.status.value == 'queued' %}
+    <p><strong>Queued.</strong> The worker picks it up within a few seconds.</p>
+    {% elif job.status.value in ('running', 'cancel_requested') %}
+    <p><strong>Chapter {{ job.chapter }} — translating{% if job.progress_total %} segment {{ job.progress_current }} of {{ job.progress_total }}{% endif %}.</strong></p>
+    <p class="meta">Started {{ job.started_at|elapsed }}{% if job.attempt > 1 %} · attempt {{ job.attempt }}{% endif %}</p>
+    {% elif job.status.value == 'succeeded' %}
+    <p><strong>Done.</strong> The draft is ready for review.</p>
+    <p><a class="chapter-link" href="{{ chapter_url }}">Open chapter {{ job.chapter }} for review</a></p>
+    {% elif job.status.value == 'cancelled' %}
+    <p><strong>Cancelled.</strong>
+      {% if job.started_at %}The run stopped mid-translation; its partial artifacts stay on record for audit but are not reviewable.{% else %}The job never started, so nothing was persisted.{% endif %}</p>
+    {% elif job.status.value == 'interrupted' %}
+    <p><strong>Interrupted.</strong> The worker stopped before finishing; the exact outcome is unknown, so it never auto-retries.</p>
+    {% else %}
+    <p><strong>Failed ({{ job.error_type or 'unknown error' }}).</strong></p>
+    {% if job.error_message %}<p class="meta">{{ job.error_message }}</p>{% endif %}
+    {% endif %}
+  </div>
+  <div class="toolbar">
+    {% if active %}
+    <form method="post" action="{{ detail_url }}/cancel">
+      <button class="btn-quiet secondary" type="submit">Cancel</button>
+    </form>
+    {% elif job.status.value in ('failed', 'interrupted', 'cancelled') %}
+    <form method="post" action="{{ detail_url }}/retry">
+      <button class="btn" type="submit">Retry as a new job</button>
+    </form>
+    {% endif %}
+  </div>
+</div>

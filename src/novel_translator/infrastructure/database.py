@@ -6,6 +6,7 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from filelock import FileLock
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.engine.interfaces import DBAPIConnection
@@ -68,7 +69,28 @@ class Database:
         Migrations run on one live connection of the shared engine so
         an in-memory database is migrated on the very connection every
         session will reuse, instead of a throwaway second database.
+        File-backed databases take a cross-process lock first so the
+        web and worker containers of one pod never migrate together.
         """
+        lock = self._migration_lock()
+        if lock is None:
+            self._upgrade()
+        else:
+            with lock:
+                self._upgrade()
+
+    def _migration_lock(self) -> FileLock | None:
+        """Return a lock beside the database file, if it has a path."""
+        prefix = "sqlite:///"
+        if not self._url.startswith(prefix):
+            return None
+        path = Path(self._url.removeprefix(prefix))
+        if not path.name:
+            return None
+        return FileLock(str(path) + ".migrate.lock")
+
+    def _upgrade(self) -> None:
+        """Run Alembic to head on one live engine connection."""
         config = Config()
         config.set_main_option(
             "script_location", _MIGRATIONS_DIRECTORY.as_posix()

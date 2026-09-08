@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Sign in — Novel Translator{% endblock %}
+{% block content %}
+<div class="login-page">
+  <h1>Sign in</h1>
+  <p class="subtitle">This reading room is private. Enter the password to continue.</p>
+  {% if error %}
+  <p class="notice warn" role="alert">{{ error }}</p>
+  {% endif %}
+  <form method="post" action="/login">
+    <input type="hidden" name="next" value="{{ next }}">
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password"
+      autocomplete="current-password" required autofocus
+      style="display: block; width: 100%; max-width: 22rem;
+        font-family: var(--font-ui); font-size: 1rem; color: var(--ink);
+        background: var(--paper-raised); border: 1px solid var(--line);
+        border-radius: var(--radius); padding: 0.55rem 0.7rem;
+        min-height: var(--tap); margin: 0.35rem 0 1rem;">
+    <div class="toolbar">
+      <button class="btn" type="submit">Sign in</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

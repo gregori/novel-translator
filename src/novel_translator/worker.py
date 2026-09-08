@@ -11,7 +11,7 @@ read by :func:`main`:
 - ``NOVEL_TRANSLATOR_MODEL`` (default ``default``)
 - ``NOVEL_TRANSLATOR_API_KEY`` (default empty)
 - ``NOVEL_TRANSLATOR_PROVIDER`` (default ``opencode-go``)
-- ``NOVEL_TRANSLATOR_REQUEST_TIMEOUT`` (default ``300.0`` seconds)
+- ``NOVEL_TRANSLATOR_REQUEST_TIMEOUT`` (default ``1200.0`` seconds)
 - ``NOVEL_TRANSLATOR_POLL_SECONDS`` (default ``5.0``)
 - ``NOVEL_TRANSLATOR_HEARTBEAT_SECONDS`` (default ``30.0``)
 - ``NOVEL_TRANSLATOR_STALE_SECONDS`` (default ``120.0``)
@@ -85,7 +85,7 @@ class WorkerConfig:
     model: str
     api_key: str
     provider: str = "opencode-go"
-    request_timeout_seconds: float = 300.0
+    request_timeout_seconds: float = 1200.0
     poll_seconds: float = 5.0
     heartbeat_seconds: float = 30.0
     stale_seconds: float = 120.0
@@ -391,7 +391,7 @@ def _load_config(workspace_default: str = ".novel-translator") -> WorkerConfig:
         api_key=_env("NOVEL_TRANSLATOR_API_KEY", ""),
         provider=_env("NOVEL_TRANSLATOR_PROVIDER", "opencode-go"),
         request_timeout_seconds=_env_float(
-            "NOVEL_TRANSLATOR_REQUEST_TIMEOUT", 300.0
+            "NOVEL_TRANSLATOR_REQUEST_TIMEOUT", 1200.0
         ),
         heartbeat_seconds=_env_float(
             "NOVEL_TRANSLATOR_HEARTBEAT_SECONDS", 30.0

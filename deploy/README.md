@@ -32,7 +32,7 @@ URL poderia aprovar e exportar capítulos. Por isso, além do basicAuth:
   navegador num ataque CSRF);
 - sem cookies de sessão, sem docs automáticos (`docs_url` desligado).
 
-Gere o htpasswd e guarde no secret `BASIC_AUTH_HTPASSWD`:
+Gere o htpasswd e guarde no secret `BASIC_AUTH_PASSWD`:
 
 ```bash
 htpasswd -nbB reviewer 'sua-senha-forte'
@@ -53,7 +53,7 @@ Reusar os mesmos valores do dojo onde indicado:
 | `NOVEL_TRANSLATOR_BASE_URL` | endpoint do provider LLM |
 | `NOVEL_TRANSLATOR_MODEL` | modelo configurado |
 | `NOVEL_TRANSLATOR_API_KEY` | chave do provider (só no servidor) |
-| `BASIC_AUTH_HTPASSWD` | saída do `htpasswd` acima |
+| `BASIC_AUTH_PASSWD` | linha `reviewer:$apr1$...` do `htpasswd` acima |
 | `INGRESS_HOST` | ex. `novels.gregori.eti.br` (apontar o DNS ao nó) |
 
 ## Primeiro deploy

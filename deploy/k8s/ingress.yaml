@@ -4,9 +4,8 @@ metadata:
   name: novel-translator-ingress
   namespace: novel-translator
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
     traefik.ingress.kubernetes.io/router.middlewares: >-
-      novel-translator-novel-translator-auth@kubernetescrd
+      novel-translator-novel-translator-redirect@kubernetescrd,novel-translator-novel-translator-auth@kubernetescrd
 spec:
   ingressClassName: traefik
   tls:

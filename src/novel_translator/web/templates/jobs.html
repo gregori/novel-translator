@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Translation jobs — Novel Translator{% endblock %}
+{% block content %}
+<h1>Translation jobs</h1>
+<p class="subtitle">Background translations, newest first. Closing the browser never interrupts them.</p>
+
+<p class="hint"><a href="/translate">Start a new translation</a></p>
+
+{% if jobs %}
+<ul class="listing card">
+  {% for job in jobs %}
+  <li class="row">
+    <div class="grow">
+      <div class="head">
+        <a class="chapter-link" href="/translate/jobs/{{ job.job_id }}">
+          {{ job.novel|title }} — Chapter {{ job.chapter }}</a>
+      </div>
+      <div class="meta">{{ job.status.value|replace("_", " ")|title }}
+        {% if job.progress_total %}· segment {{ job.progress_current }} of {{ job.progress_total }}{% endif %}
+        · {{ job.created_at|timestamp }}</div>
+    </div>
+    <span class="badge {% if job_active(job) %}state-translating{% elif job.status.value == 'succeeded' %}state-approved{% elif job.status.value in ('failed', 'interrupted') %}state-failed{% endif %}">
+      {{ job.status.value|replace("_", " ")|title }}</span>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="empty">
+  No translation jobs yet.
+  <div class="hint">Start one from the <a href="/translate">translate page</a>.</div>
+</div>
+{% endif %}
+{% endblock %}

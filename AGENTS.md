@@ -112,6 +112,19 @@ Python code **must** pass the quality gates listed in
 - Template regression tests parse attributes; substring assertions on
   `hidden` fail for unrelated reasons.
 
+### Phase 5 — Queue and session gate
+
+- Queue status changes across processes must be guarded `UPDATE`s
+  (`WHERE status IN (...)`, `rowcount` checked): check-then-act over
+  two connections silently loses cancels and resurrects settled jobs.
+- Two containers migrating one SQLite file need a cross-process
+  filelock around Alembic, or both `CREATE TABLE` at pod start.
+- Behind a TLS-terminating proxy, trust proxy headers
+  (`forwarded_allow_ips`) or `Secure` cookies and IP throttles
+  silently break (peer is always the proxy).
+- Listings must not materialize large payload columns: defer
+  `source_text`-sized fields and project summaries for polls/scans.
+
 ## Self-learning
 
 - After each defect or review finding, extract the reusable invariant, add a

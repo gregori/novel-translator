@@ -35,6 +35,7 @@ dev = [
 [project.scripts]
 novel-translator = "novel_translator.cli.app:main"
 novel-translator-web = "novel_translator.web.app:main"
+novel-translator-worker = "novel_translator.worker:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/novel_translator"]

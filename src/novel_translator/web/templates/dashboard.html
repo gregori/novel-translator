@@ -4,6 +4,25 @@
 <h1>Reading room</h1>
 <p class="subtitle">Translations in progress, chapters waiting for you, and what is already out.</p>
 
+{% if active_jobs %}
+<h2>Translating now</h2>
+<ul class="listing card">
+  {% for job in active_jobs %}
+  <li class="row">
+    <div class="grow">
+      <div class="head">
+        <a class="chapter-link" href="/translate/jobs/{{ job.job_id }}">
+          {{ job.novel|title }} — Chapter {{ job.chapter }}</a>
+      </div>
+      <div class="meta">{{ job.status.value|replace("_", " ")|title }}
+        {% if job.progress_total %}· segment {{ job.progress_current }} of {{ job.progress_total }}{% endif %}</div>
+    </div>
+    <span class="badge state-translating">{{ job.status.value|replace("_", " ")|title }}</span>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
 {% if novels %}
 <h2>Novels</h2>
 <ul class="listing card">
@@ -65,7 +84,7 @@
 {% elif novels %}
 <div class="empty">
   Nothing waiting right now.
-  <div class="hint">Translate a chapter from the CLI to start a review here.</div>
+  <div class="hint"><a href="/translate">Translate a chapter</a> to start a review here.</div>
 </div>
 {% endif %}
 

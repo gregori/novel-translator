@@ -19,6 +19,13 @@ from novel_translator.application.catalog import (
 )
 from novel_translator.application.export import ExportArtifact
 from novel_translator.application.inspect import ReadChapterForReview
+from novel_translator.application.jobs import (
+    EnqueueTranslation,
+    GetTranslationJob,
+    ListTranslationJobs,
+    RequestJobCancellation,
+    RetryTranslationJob,
+)
 from novel_translator.application.review import GetDiff, ListRevisions
 from novel_translator.application.working_copy import (
     CreateRevisionFromWorkingCopy,
@@ -52,6 +59,11 @@ class Services:
     discard_working_copy: DiscardWorkingCopy
     get_working_copy_diff: GetWorkingCopyDiff
     create_revision_from_working_copy: CreateRevisionFromWorkingCopy
+    enqueue_translation: EnqueueTranslation
+    get_translation_job: GetTranslationJob
+    list_translation_jobs: ListTranslationJobs
+    cancel_translation_job: RequestJobCancellation
+    retry_translation_job: RetryTranslationJob
     site_root: Path | None
 
     def dashboard(self) -> DashboardCatalog:

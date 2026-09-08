@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Chapter {{ job.chapter }} translation — Novel Translator{% endblock %}
+{% block content %}
+<h1>{{ job.novel|title }} — Chapter {{ job.chapter }}</h1>
+<div class="toolbar">
+  <span class="badge {% if active %}state-translating{% elif job.status.value == 'succeeded' %}state-approved{% elif job.status.value in ('failed', 'interrupted') %}state-failed{% endif %}">
+    {{ job.status.value|replace("_", " ")|title }}</span>
+  <span class="muted">{{ job.provider }} · {{ job.model }}</span>
+</div>
+
+{% include "partials/job_status.html" %}
+
+<details class="tech">
+  <summary>Technical details</summary>
+  <div class="meta">Job {{ job.job_id }}</div>
+  {% if job.run_id %}<div class="meta">Run {{ job.run_id }}</div>{% endif %}
+  {% if job.parent_job_id %}<div class="meta">Retry of {{ job.parent_job_id }}</div>{% endif %}
+  <div class="meta">Source {{ job.source_kind.value }}: {{ job.source_ref }}</div>
+  <div class="meta">Enqueued {{ job.created_at|timestamp }}</div>
+  {% if job.completed_at %}<div class="meta">Finished {{ job.completed_at|timestamp }}</div>{% endif %}
+</details>
+{% endblock %}

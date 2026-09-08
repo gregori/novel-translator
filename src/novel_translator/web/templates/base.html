@@ -13,6 +13,13 @@
     <header class="masthead">
       <a class="home" href="/">Novel Translator</a>
       <span class="tagline">Editorial reading room</span>
+      <nav class="topnav">
+        <a href="/translate">Translate</a>
+        <a href="/translate/jobs">Jobs</a>
+      </nav>
+      <form class="logout" method="post" action="/logout">
+        <button class="btn-quiet secondary" type="submit">Sign out</button>
+      </form>
     </header>
     <main class="sheet">
       {% block content %}{% endblock %}

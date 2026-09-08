@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Translate — Novel Translator{% endblock %}
+{% block content %}
+<h1>Translate</h1>
+<p class="subtitle">Start a translation in the background. You can close the browser; progress waits for you here.</p>
+
+<form method="post" action="/translate" enctype="multipart/form-data" class="card form">
+  <label for="novel">Novel</label>
+  <select id="novel" name="novel" required>
+    <option value="">Select a novel…</option>
+    {% for item in novels %}
+    <option value="{{ item.id }}" {% if item.id == selected_novel %}selected{% endif %}>
+      {{ item.title }} ({{ item.id }})
+    </option>
+    {% endfor %}
+  </select>
+  {% if defaults %}
+  <div class="hint">Defaults for {{ defaults.title }}: {{ defaults.provider }} · {{ defaults.model }}{% if defaults.volume %} · volume {{ defaults.volume }}{% endif %}.</div>
+  {% endif %}
+
+  <label for="chapter">Chapter</label>
+  <input id="chapter" name="chapter" type="number" min="1" inputmode="numeric"
+         value="{{ chapter }}" required placeholder="e.g. 32">
+
+  <label for="volume">Volume <span class="muted">(optional)</span></label>
+  <input id="volume" name="volume" type="number" min="1" inputmode="numeric" placeholder="Catalog default">
+
+  <fieldset>
+    <legend>Source</legend>
+    {% for path in sources %}
+    <label class="choice">
+      <input type="radio" name="source_mode" value="existing-{{ loop.index }}" {% if loop.first %}checked{% endif %}>
+      <span class="code">{{ path }}</span>
+    </label>
+    {% endfor %}
+    {% if sources %}
+    <div class="hint">One source per chapter is usual; pick the ordinal when several exist.</div>
+    {% elif selected_novel and chapter %}
+    <div class="hint">No configured source for this chapter yet — upload the Japanese file or inform an episode below.</div>
+    {% endif %}
+    <label class="choice">
+      <input type="radio" name="source_mode" value="episode" {% if not sources %}checked{% endif %}>
+      <span>Kakuyomu episode</span>
+    </label>
+    <input name="episode" inputmode="numeric" placeholder="Episode id, e.g. 12345678">
+    <label class="choice">
+      <input type="radio" name="source_mode" value="upload" {% if not sources %}checked{% endif %}>
+      <span>Upload Japanese file (UTF-8, ≤1 MB)</span>
+    </label>
+    <input type="file" name="upload" accept=".md,.txt,text/plain">
+  </fieldset>
+
+  <div class="toolbar">
+    <button class="btn" type="submit">Start translation</button>
+    <button class="btn-quiet secondary" type="submit" formmethod="get" formaction="/translate" formenctype="application/x-www-form-urlencoded">Load sources</button>
+  </div>
+</form>
+
+<p class="hint"><a href="/translate/jobs">Recent translation jobs</a></p>
+{% endblock %}

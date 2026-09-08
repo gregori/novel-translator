@@ -37,6 +37,13 @@ jobs:
           test -n "${{ secrets.OCI_REGISTRY }}" || { echo "OCI_REGISTRY is empty"; exit 1; }
           test -n "${{ secrets.OCI_TENANCY_NAMESPACE }}" || { echo "OCI_TENANCY_NAMESPACE is empty"; exit 1; }
 
+      - name: Verify auth secrets
+        run: |
+          test -n "${{ secrets.NOVEL_TRANSLATOR_BASE_URL }}" || { echo "NOVEL_TRANSLATOR_BASE_URL is empty"; exit 1; }
+          test -n "${{ secrets.NOVEL_TRANSLATOR_MODEL }}" || { echo "NOVEL_TRANSLATOR_MODEL is empty"; exit 1; }
+          test -n "${{ secrets.NOVEL_TRANSLATOR_API_KEY }}" || { echo "NOVEL_TRANSLATOR_API_KEY is empty"; exit 1; }
+          test -n "${{ secrets.NOVEL_TRANSLATOR_AUTH_PASSWORD_HASH }}" || { echo "NOVEL_TRANSLATOR_AUTH_PASSWORD_HASH is empty"; exit 1; }
+          test -n "${{ secrets.NOVEL_TRANSLATOR_SESSION_SECRET }}" || { echo "NOVEL_TRANSLATOR_SESSION_SECRET is empty"; exit 1; }
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -80,9 +87,8 @@ jobs:
               --from-literal=base-url='${{ secrets.NOVEL_TRANSLATOR_BASE_URL }}' \
               --from-literal=model='${{ secrets.NOVEL_TRANSLATOR_MODEL }}' \
               --from-literal=api-key='${{ secrets.NOVEL_TRANSLATOR_API_KEY }}' \
-              --dry-run=client -o yaml | sudo k3s kubectl apply -f -
-            sudo k3s kubectl create secret generic novel-translator-basic-auth -n novel-translator \
-              --from-literal=users='${{ secrets.BASIC_AUTH_PASSWD }}' \
+              --from-literal=auth-password-hash='${{ secrets.NOVEL_TRANSLATOR_AUTH_PASSWORD_HASH }}' \
+              --from-literal=session-secret='${{ secrets.NOVEL_TRANSLATOR_SESSION_SECRET }}' \
               --dry-run=client -o yaml | sudo k3s kubectl apply -f -
             sudo k3s kubectl create secret docker-registry ocir-secret -n novel-translator \
               --docker-server='${{ secrets.OCI_REGISTRY }}' \

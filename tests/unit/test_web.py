@@ -435,7 +435,7 @@ def test_error_and_empty_states_orient_the_reader(tmp_path: Path) -> None:
     runless = client.get("/novels/novel/chapters/2").text
     assert "no translation run yet" in runless
     assert "第二章の原文" in runless
-    assert "translate --novel novel --chapter 2" in runless
+    assert "/translate?novel=novel&chapter=2" in runless
 
     missing_page = client.get("/novels/novel/chapters/99")
     assert missing_page.status_code == 404

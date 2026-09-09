@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from dataclasses import dataclass
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from novel_translator.application.catalog import ChapterSummary
+from novel_translator.application.export import ExportHistoryInput
 from novel_translator.application.inspect import ReadChapterForReviewInput
 from novel_translator.application.review import GetDiffInput
 from novel_translator.application.working_copy import GetWorkingCopyDiffInput
-from novel_translator.domain.errors import IntegrityError
-from novel_translator.domain.models import WorkingCopy
+from novel_translator.domain.errors import IntegrityError, NovelTranslatorError
+from novel_translator.domain.models import ExportEvent, WorkingCopy
 from novel_translator.web.routes.support import (
     FLASH_MESSAGES,
     active_copy,
@@ -69,6 +71,7 @@ def technical_rows(
     details: dict[str, object],
     copy: WorkingCopy | None,
     revisions: tuple[RevisionView, ...],
+    last_export: ExportEvent | None = None,
 ) -> tuple[tuple[str, str], ...]:
     """Collect identifiers and every available hash for the details panel."""
     rows: list[tuple[str, str]] = []
@@ -101,6 +104,17 @@ def technical_rows(
                 (
                     f"revision_{revision.ordinal}_content_hash",
                     revision.content_hash,
+                ),
+            )
+        )
+    if last_export is not None:
+        rows.extend(
+            (
+                ("last_export_content_hash", last_export.content_hash),
+                ("last_export_destination", last_export.destination),
+                (
+                    "last_exported_at",
+                    format_timestamp(last_export.exported_at),
                 ),
             )
         )
@@ -154,6 +168,13 @@ def chapter_page(
         )
     )
     revisions = revision_views(result.revisions)
+    last_export: ExportEvent | None = None
+    if result.run_id is not None:
+        with suppress(NovelTranslatorError):
+            history = services.list_export_history.execute(
+                ExportHistoryInput(run_id=result.run_id)
+            )
+            last_export = history[-1] if history else None
     view = ChapterView(
         novel=novel,
         title=services.novel_title(novel),
@@ -166,7 +187,11 @@ def chapter_page(
         working_copy=result.working_copy,
         revisions=revisions,
         technical=technical_rows(
-            result.run_id, result.details, result.working_copy, revisions
+            result.run_id,
+            result.details,
+            result.working_copy,
+            revisions,
+            last_export,
         ),
         run_status=result.run_status,
         urls=chapter_urls(novel, chapter, result.run_choice),
@@ -182,6 +207,7 @@ def chapter_page(
             "has_draft": has_draft,
             "draft_approved": result.draft_approved,
             "flash": FLASH_MESSAGES.get(flash_key) if flash_key else None,
+            "last_export": last_export,
         },
     )
 

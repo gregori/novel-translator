@@ -423,6 +423,114 @@ def test_export_without_approval_is_rejected(tmp_path: Path) -> None:
     assert "not been approved" in response.text
 
 
+def _approve_first_revision(client: TestClient) -> None:
+    """Create and approve revision 1 through the review room."""
+    start_working_copy(client)
+    page = client.get(CHAPTER_URL).text
+    save_working_copy(
+        client,
+        working_copy_version(page),
+        "Chapter 1: A New Dawn\n\nBody.",
+        copy_id=working_copy_id(page),
+    )
+    client.post(
+        f"{CHAPTER_URL}/revision",
+        data={
+            "working_copy_id": working_copy_id(client.get(CHAPTER_URL).text),
+            "note": "",
+            "run_choice": "",
+        },
+    )
+    approved = client.post(
+        f"{CHAPTER_URL}/approval", data={"revision": "1", "run_choice": ""}
+    )
+    assert approved.status_code == 200
+
+
+def test_export_preview_and_download_serve_approved_markdown(
+    tmp_path: Path,
+) -> None:
+    """View, download, and copy expose the exact approved Markdown."""
+    site_root = tmp_path / "site"
+    site_root.mkdir()
+    client, workspace = build_client(tmp_path, site_root=site_root)
+    create_run(workspace, "a" * 32)
+    _approve_first_revision(client)
+
+    preview = client.get(f"{CHAPTER_URL}/export/preview?revision=1")
+    assert preview.status_code == 200
+    assert "Body." in preview.text
+    assert "chapterTitle:" in preview.text
+    assert "A New Dawn" in preview.text
+
+    download = client.get(f"{CHAPTER_URL}/export/download?revision=1")
+    assert download.status_code == 200
+    assert "attachment" in download.headers["content-disposition"]
+    assert "001.md" in download.headers["content-disposition"]
+    assert 'chapterTitle: "Chapter 1: A New Dawn"' in download.text
+    assert "Body." in download.text
+
+    page = client.get(CHAPTER_URL).text
+    assert "export/download" in page
+    assert "export/preview" in page
+
+
+def test_export_preview_without_approval_is_rejected(
+    tmp_path: Path,
+) -> None:
+    """Unapproved artifacts cannot be previewed or downloaded."""
+    site_root = tmp_path / "site"
+    site_root.mkdir()
+    client, workspace = build_client(tmp_path, site_root=site_root)
+    create_run(workspace, "a" * 32)
+
+    preview = client.get(f"{CHAPTER_URL}/export/preview")
+    assert preview.status_code == 409
+
+    download = client.get(f"{CHAPTER_URL}/export/download")
+    assert download.status_code == 409
+
+
+def test_chapter_page_shows_last_export_provenance(
+    tmp_path: Path,
+) -> None:
+    """The review room points the last publication at its exact hash."""
+    site_root = tmp_path / "site"
+    site_root.mkdir()
+    client, workspace = build_client(tmp_path, site_root=site_root)
+    create_run(workspace, "a" * 32)
+    _approve_first_revision(client)
+    exported = client.post(
+        f"{CHAPTER_URL}/export",
+        data={"revision": "1", "run_choice": ""},
+        follow_redirects=False,
+    )
+    assert exported.status_code == 303
+
+    page = client.get(CHAPTER_URL).text
+    expected_hash = sha256_text("Chapter 1: A New Dawn\n\nBody.")
+    assert "Last export" in page
+    assert expected_hash in page
+
+
+def test_chapter_page_survives_a_corrupt_export_ledger(
+    tmp_path: Path,
+) -> None:
+    """An unreadable export ledger degrades instead of blanking the room."""
+    site_root = tmp_path / "site"
+    site_root.mkdir()
+    client, workspace = build_client(tmp_path, site_root=site_root)
+    create_run(workspace, "a" * 32)
+    ledger = workspace / "editorial" / "exports.jsonl"
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    ledger.write_text("{}\n\n", encoding="utf-8")
+
+    page = client.get(CHAPTER_URL)
+    assert page.status_code == 200
+    assert "Draft text." in page.text
+    assert "Last export" not in page.text
+
+
 def test_error_and_empty_states_orient_the_reader(tmp_path: Path) -> None:
     """Unknown novels and runless chapters explain what to do next."""
     client, workspace = build_client(tmp_path)

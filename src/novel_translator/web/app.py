@@ -25,7 +25,11 @@ from novel_translator.application.catalog import (
     ListDashboard,
     ResolveChapter,
 )
-from novel_translator.application.export import ExportArtifact
+from novel_translator.application.export import (
+    ExportArtifact,
+    ListExportHistory,
+    PreviewExport,
+)
 from novel_translator.application.inspect import ReadChapterForReview
 from novel_translator.application.jobs import (
     EnqueueTranslation,
@@ -160,6 +164,8 @@ def create_app(
         approve_artifact=ApproveArtifact(workspace),
         revoke_approval=RevokeApproval(workspace),
         export_artifact=ExportArtifact(workspace, FilesystemArtifactWriter()),
+        preview_export=PreviewExport(workspace),
+        list_export_history=ListExportHistory(workspace),
         get_working_copy=GetWorkingCopy(working_copies),
         start_working_copy=StartWorkingCopy(workspace, working_copies),
         save_working_copy=SaveWorkingCopy(working_copies),

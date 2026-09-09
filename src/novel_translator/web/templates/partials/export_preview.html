@@ -1,0 +1,10 @@
+<div class="card reading" id="export-preview-target">
+  <div class="toolbar">
+    <button class="btn-quiet secondary" id="export-copy-btn" type="button">Copy</button>
+  </div>
+  <div id="export-preview-rendered">{{ rendered|safe }}</div>
+  <details>
+    <summary>Raw Markdown</summary>
+    <div class="source-text" id="export-preview-text">{{ content }}</div>
+  </details>
+</div>

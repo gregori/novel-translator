@@ -11,8 +11,12 @@ from novel_translator.application.approve import (
 from novel_translator.application.export import (
     ExportArtifact,
     ExportArtifactInput,
+    ExportHistoryInput,
+    ListExportHistory,
+    PreviewExport,
+    PreviewExportInput,
 )
-from novel_translator.domain.errors import ApprovalRequired
+from novel_translator.domain.errors import ApprovalRequired, CollisionRequired
 from novel_translator.infrastructure.export import FilesystemArtifactWriter
 from novel_translator.infrastructure.workspace import Workspace
 from novel_translator.shared.utils import sha256_text
@@ -117,3 +121,94 @@ def test_export_uses_volume_persisted_in_run_metadata(tmp_path: Path) -> None:
     assert 'chapterTitle: "Chapter 1"' in exported.read_text(encoding="utf-8")
     assert "publishDate: 2026-08-24" in exported.read_text(encoding="utf-8")
     assert "volume: 2" in exported.read_text(encoding="utf-8")
+
+
+def test_preview_renders_without_touching_checkout(tmp_path: Path) -> None:
+    """Download/view/copy render the approved Markdown without writing."""
+
+    workspace = Workspace(tmp_path)
+    run_dir = tmp_path / "runs" / VALID_RUN_ID
+    run_dir.mkdir(parents=True)
+    (run_dir / "draft.md").write_text("Draft", encoding="utf-8")
+    (run_dir / "draft.sha256").write_text(
+        sha256_text("Draft"), encoding="utf-8"
+    )
+    (run_dir / "run.json").write_text("{}", encoding="utf-8")
+    approve(workspace, VALID_RUN_ID)
+
+    preview = PreviewExport(workspace).execute(
+        PreviewExportInput(
+            VALID_RUN_ID, title="Chapter 1", publish_date="2026-08-24"
+        )
+    )
+
+    assert 'chapterTitle: "Chapter 1"' in preview.content
+    assert preview.content_hash == sha256_text("Draft")
+    assert not (tmp_path / "out.md").exists()
+    assert (
+        ListExportHistory(workspace).execute(ExportHistoryInput(VALID_RUN_ID))
+        == ()
+    )
+
+
+def test_preview_requires_current_approval(tmp_path: Path) -> None:
+    """Unapproved artifacts cannot be downloaded, viewed, or copied."""
+    workspace = Workspace(tmp_path)
+    run_dir = tmp_path / "runs" / VALID_RUN_ID
+    run_dir.mkdir(parents=True)
+    (run_dir / "draft.md").write_text("Draft", encoding="utf-8")
+    (run_dir / "draft.sha256").write_text(
+        sha256_text("Draft"), encoding="utf-8"
+    )
+    with pytest.raises(ApprovalRequired):
+        PreviewExport(workspace).execute(
+            PreviewExportInput(VALID_RUN_ID, title="Title")
+        )
+
+
+def test_identical_reexport_is_idempotent(tmp_path: Path) -> None:
+    """Repeating an identical export rewrites the same bytes and
+    appends one provenance event per export."""
+    workspace = Workspace(tmp_path)
+    run_dir = tmp_path / "runs" / VALID_RUN_ID
+    run_dir.mkdir(parents=True)
+    (run_dir / "draft.md").write_text("Draft", encoding="utf-8")
+    (run_dir / "draft.sha256").write_text(
+        sha256_text("Draft"), encoding="utf-8"
+    )
+    (run_dir / "run.json").write_text("{}", encoding="utf-8")
+    approve(workspace, VALID_RUN_ID)
+    destination = tmp_path / "out.md"
+
+    first = export_draft(workspace, VALID_RUN_ID, destination, title="Title")
+    second = export_draft(workspace, VALID_RUN_ID, destination, title="Title")
+
+    assert first.read_text(encoding="utf-8") == second.read_text(
+        encoding="utf-8"
+    )
+    history = ListExportHistory(workspace).execute(
+        ExportHistoryInput(VALID_RUN_ID)
+    )
+    assert len(history) == 2
+    assert all(event.content_hash == sha256_text("Draft") for event in history)
+
+
+def test_different_destination_content_requires_confirmation(
+    tmp_path: Path,
+) -> None:
+    """Foreign bytes at the destination require explicit overwrite."""
+    workspace = Workspace(tmp_path)
+    run_dir = tmp_path / "runs" / VALID_RUN_ID
+    run_dir.mkdir(parents=True)
+    (run_dir / "draft.md").write_text("Draft", encoding="utf-8")
+    (run_dir / "draft.sha256").write_text(
+        sha256_text("Draft"), encoding="utf-8"
+    )
+    (run_dir / "run.json").write_text("{}", encoding="utf-8")
+    approve(workspace, VALID_RUN_ID)
+    destination = tmp_path / "out.md"
+    destination.write_text("foreign bytes", encoding="utf-8")
+
+    with pytest.raises(CollisionRequired):
+        export_draft(workspace, VALID_RUN_ID, destination, title="Title")
+    assert destination.read_text(encoding="utf-8") == "foreign bytes"

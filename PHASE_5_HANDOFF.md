@@ -44,12 +44,14 @@ Decisões estruturais:
 - Polling HTMX troca status + ações juntos; sem trigger no terminal.
 - `Services` expõe só casos de uso, nunca o repositório.
 
-## Operação (o que muda no cluster)
+## Pós-deploy (incidente do capítulo 35)
 
-- Novos secrets GitHub: `NOVEL_TRANSLATOR_AUTH_PASSWORD_HASH`
-  (`hash_password`), `NOVEL_TRANSLATOR_SESSION_SECRET` (`token_hex(32)`).
-  `BASIC_AUTH_PASSWD` sai de uso; secret `novel-translator-basic-auth`
-  some.
+- Job falhou 3x em `TransientProviderError` com causa invisível.
+- Diagnóstico: egresso ok, chave/modelo ok (chamada curta no pod
+  respondeu `ok`); capítulo longo estourava o budget por tentativa.
+- Fix #34: `NOVEL_TRANSLATOR_REQUEST_TIMEOUT` configurável + log de
+  cada retry no `kubectl logs -c worker`.
+- Fix #35: default 300s → 1200s (valor local comprovado).
 - `NOVEL_TRANSLATOR_BASE_URL` precisa ser alcançável de dentro do
   cluster (`localhost` não serve) — o worker traduz lá dentro.
 - Rollout mantém `strategy: Recreate`; `/healthz` segue público.

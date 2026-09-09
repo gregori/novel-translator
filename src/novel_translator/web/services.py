@@ -17,7 +17,11 @@ from novel_translator.application.catalog import (
     ListDashboard,
     ResolveChapter,
 )
-from novel_translator.application.export import ExportArtifact
+from novel_translator.application.export import (
+    ExportArtifact,
+    ListExportHistory,
+    PreviewExport,
+)
 from novel_translator.application.inspect import ReadChapterForReview
 from novel_translator.application.jobs import (
     EnqueueTranslation,
@@ -53,6 +57,8 @@ class Services:
     approve_artifact: ApproveArtifact
     revoke_approval: RevokeApproval
     export_artifact: ExportArtifact
+    preview_export: PreviewExport
+    list_export_history: ListExportHistory
     get_working_copy: GetWorkingCopy
     start_working_copy: StartWorkingCopy
     save_working_copy: SaveWorkingCopy
@@ -90,3 +96,9 @@ class Services:
                 "without a site checkout root."
             )
         return self.registry.export_destination(novel, chapter, self.site_root)
+
+    def export_filename(self, novel: str, chapter: int) -> str:
+        """Return the configured download filename without a checkout."""
+        return self.registry.novel(novel).export.filename_template.format(
+            chapter=chapter
+        )

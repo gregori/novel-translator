@@ -211,6 +211,8 @@ class ExportEvent:
     content_hash: str
     destination: str
     exported_at: str
+    git_commit: str | None = None
+    pull_request_url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

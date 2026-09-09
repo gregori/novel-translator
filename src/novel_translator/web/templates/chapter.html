@@ -139,12 +139,12 @@
 
 {% if view.revisions or has_draft %}
 <h2>Export</h2>
-<div class="card">
+<div class="card" data-export-toolbar data-run-choice="{{ view.run_choice or '' }}">
   <p class="muted">Writes the approved artifact into the configured site checkout.</p>
   <form method="post" action="{{ view.urls.export_url }}" class="toolbar">
     <input type="hidden" name="run_choice" value="{{ view.run_choice or '' }}">
     {% if view.revisions %}
-    <select name="revision" aria-label="Artifact to export">
+    <select name="revision" data-export-revision aria-label="Artifact to export">
       {% for revision in view.revisions %}
       <option value="{{ revision.ordinal }}" {% if revision.approved %}selected{% endif %}>
         Revision {{ revision.ordinal }}{% if revision.approved %} — approved{% endif %}
@@ -156,6 +156,18 @@
     <label class="muted"><input type="checkbox" name="overwrite"> replace existing file</label>
     <button type="submit">Export</button>
   </form>
+  <div class="toolbar">
+    <a class="btn-quiet secondary" data-export-download href="{{ view.urls.export_download_url }}">Download</a>
+    <button class="btn-quiet secondary"
+            data-export-preview
+            hx-get="{{ view.urls.export_preview_url }}"
+            hx-target="#export-preview-slot"
+            hx-swap="innerHTML">View</button>
+  </div>
+  {% if last_export %}
+  <p class="muted">Last export · {{ last_export.exported_at|timestamp }}</p>
+  {% endif %}
+  <div id="export-preview-slot"></div>
 </div>
 {% endif %}
 

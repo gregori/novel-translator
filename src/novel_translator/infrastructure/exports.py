@@ -73,3 +73,65 @@ class ExportRepository:
         return {
             run_id: frozenset(run_keys) for run_id, run_keys in keys.items()
         }
+
+    def events_for_run(self, run_id: str) -> tuple[ExportEvent, ...]:
+        """Return every export provenance event for one run in file order."""
+        path = self._storage.safe(Path("editorial") / "exports.jsonl")
+        if not path.exists():
+            return ()
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeError) as error:
+            raise IntegrityError("Export events are invalid.") from error
+        events: list[ExportEvent] = []
+        for line in lines:
+            try:
+                loaded: object = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise IntegrityError("Export events are invalid.") from error
+            if not isinstance(loaded, dict):
+                raise IntegrityError("Export events are invalid.")
+            event = cast(dict[str, object], loaded)
+            if event.get("run_id") != run_id:
+                continue
+            parsed = self._parse_event(event)
+            if parsed is not None:
+                events.append(parsed)
+        return tuple(events)
+
+    @staticmethod
+    def _parse_event(event: dict[str, object]) -> ExportEvent | None:
+        """Parse one export event, tolerating pre-phase-6 payloads."""
+        kind = event.get("artifact_kind")
+        content_hash = event.get("content_hash")
+        destination = event.get("destination")
+        exported_at = event.get("exported_at")
+        if (
+            not isinstance(kind, str)
+            or not isinstance(content_hash, str)
+            or not isinstance(destination, str)
+            or not isinstance(exported_at, str)
+        ):
+            return None
+        try:
+            artifact_kind = ArtifactKind(kind)
+        except ValueError:
+            return None
+        artifact_id = event.get("artifact_id")
+        git_commit = event.get("git_commit")
+        pull_request_url = event.get("pull_request_url")
+        schema_version = event.get("schema_version")
+        version = schema_version if isinstance(schema_version, int) else 1
+        return ExportEvent(
+            schema_version=version,
+            run_id=str(event.get("run_id")),
+            artifact_kind=artifact_kind,
+            artifact_id=artifact_id if isinstance(artifact_id, str) else None,
+            content_hash=content_hash,
+            destination=destination,
+            exported_at=exported_at,
+            git_commit=git_commit if isinstance(git_commit, str) else None,
+            pull_request_url=pull_request_url
+            if isinstance(pull_request_url, str)
+            else None,
+        )

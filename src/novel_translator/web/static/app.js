@@ -260,6 +260,84 @@
 
   /* ---------- Confirm discard ---------- */
 
+  /* ---------- Export toolbar (view / download / copy) ---------- */
+
+  function exportQuery(toolbar) {
+    var params = new URLSearchParams();
+    if (toolbar.dataset.runChoice) {
+      params.set("run_choice", toolbar.dataset.runChoice);
+    }
+    var select = toolbar.querySelector("[data-export-revision]");
+    if (select && select.value) params.set("revision", select.value);
+    return params.toString();
+  }
+
+  function syncExportLinks(toolbar) {
+    var query = exportQuery(toolbar);
+    var suffix = query ? "?" + query : "";
+    var preview = toolbar.querySelector("[data-export-preview]");
+    var download = toolbar.querySelector("[data-export-download]");
+    if (preview) {
+      preview.setAttribute(
+        "hx-get",
+        preview.getAttribute("hx-get").split("?")[0] + suffix
+      );
+      if (window.htmx) window.htmx.process(preview);
+    }
+    if (download) {
+      download.setAttribute(
+        "href",
+        download.getAttribute("href").split("?")[0] + suffix
+      );
+    }
+  }
+
+  function wireExportToolbar(scope) {
+    scope.querySelectorAll("[data-export-toolbar]").forEach(function (bar) {
+      var select = bar.querySelector("[data-export-revision]");
+      if (select && !select.dataset.wired) {
+        select.dataset.wired = "true";
+        select.addEventListener("change", function () {
+          syncExportLinks(bar);
+        });
+      }
+      syncExportLinks(bar);
+    });
+  }
+
+  function copyExportText(button) {
+    var slot = document.getElementById("export-preview-slot");
+    var el = slot
+      ? slot.querySelector("#export-preview-text")
+      : document.getElementById("export-preview-text");
+    var text = el ? el.textContent : "";
+    function done(ok) {
+      button.textContent = ok ? "Copied" : "Copy failed";
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(
+        function () {
+          done(true);
+        },
+        function () {
+          done(false);
+        }
+      );
+    } else {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+        done(true);
+      } catch (e) {
+        done(false);
+      }
+      document.body.removeChild(ta);
+    }
+  }
+
   function wireConfirms(scope) {
     scope.querySelectorAll("form[data-confirm]").forEach(function (form) {
       form.addEventListener("submit", function (event) {
@@ -271,6 +349,7 @@
   function boot() {
     wireTabs(document);
     wireConfirms(document);
+    wireExportToolbar(document);
     document.querySelectorAll("[data-editor-root]").forEach(function (root) {
       wireRecovery(root);
       wireAutosave(root);
@@ -283,9 +362,25 @@
     boot();
   }
 
+  /* Swap rejected fragments so reviewer rejections stay visible. */
+  document.body.addEventListener("htmx:beforeSwap", function (event) {
+    var xhr = event.detail.xhr;
+    if (xhr && xhr.status >= 400) {
+      event.detail.shouldSwap = true;
+      event.detail.isError = false;
+    }
+  });
+
+  /* Delegated copy survives every preview swap. */
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest("#export-copy-btn");
+    if (button) copyExportText(button);
+  });
+
   /* Re-wire after HTMX swaps (search/filter partials). */
   document.body.addEventListener("htmx:afterSwap", function (event) {
     wireTabs(event.target);
     wireConfirms(event.target);
+    wireExportToolbar(event.target);
   });
 })();

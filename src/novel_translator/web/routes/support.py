@@ -122,6 +122,8 @@ def chapter_urls(
         "approval_url": f"{base}/approval{suffix}",
         "revoke_url": f"{base}/approval/revoke{suffix}",
         "export_url": f"{base}/export{suffix}",
+        "export_preview_url": f"{base}/export/preview{suffix}",
+        "export_download_url": f"{base}/export/download{suffix}",
     }
 
 

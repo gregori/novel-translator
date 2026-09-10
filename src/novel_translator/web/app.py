@@ -38,6 +38,7 @@ from novel_translator.application.jobs import (
     RequestJobCancellation,
     RetryTranslationJob,
 )
+from novel_translator.application.publish import PublishExport
 from novel_translator.application.review import GetDiff, ListRevisions
 from novel_translator.application.working_copy import (
     CreateRevisionFromWorkingCopy,
@@ -52,10 +53,12 @@ from novel_translator.domain.errors import (
     CollisionRequired,
     IntegrityError,
     NovelTranslatorError,
+    PublicationError,
 )
-from novel_translator.infrastructure.catalog import load_catalog
+from novel_translator.infrastructure.catalog import NovelRegistry, load_catalog
 from novel_translator.infrastructure.database import Database
 from novel_translator.infrastructure.export import FilesystemArtifactWriter
+from novel_translator.infrastructure.github import GitHubSitePublisher
 from novel_translator.infrastructure.jobs import (
     SqlAlchemyTranslationJobRepository,
 )
@@ -84,11 +87,25 @@ STATIC = _PACKAGE / "static"
 
 def _status_for(error: NovelTranslatorError) -> int:
     """Map one typed application error onto an HTTP status."""
+    if isinstance(error, PublicationError):
+        return 502
     if isinstance(
         error, (IntegrityError, ApprovalRequired, CollisionRequired)
     ):
         return 409
     return 400
+
+
+def _publish_export(
+    registry: NovelRegistry,
+    workspace: Workspace,
+    github_token: str | None,
+) -> PublishExport | None:
+    """Build the publication use case only when a token is configured."""
+    if github_token is None:
+        return None
+    publisher = GitHubSitePublisher(github_token)
+    return PublishExport(workspace, registry, publisher)
 
 
 def _register_filters(templates: Jinja2Templates) -> None:
@@ -139,6 +156,7 @@ def create_app(
     workspace_root: str | Path,
     database_url: str,
     site_root: str | Path | None = None,
+    github_token: str | None = None,
 ) -> FastAPI:
     """Compose the reading and review room over shared use cases."""
     registry = load_catalog(Path(catalog_path))
@@ -166,6 +184,7 @@ def create_app(
         export_artifact=ExportArtifact(workspace, FilesystemArtifactWriter()),
         preview_export=PreviewExport(workspace),
         list_export_history=ListExportHistory(workspace),
+        publish_export=_publish_export(registry, workspace, github_token),
         get_working_copy=GetWorkingCopy(working_copies),
         start_working_copy=StartWorkingCopy(workspace, working_copies),
         save_working_copy=SaveWorkingCopy(working_copies),
@@ -256,11 +275,13 @@ def main() -> None:
         f"sqlite:///{(workspace / 'working-copies.sqlite').as_posix()}",
     )
     site_root = os.environ.get("NOVEL_TRANSLATOR_SITE_ROOT")
+    github_token = os.environ.get("NOVEL_TRANSLATOR_GITHUB_TOKEN")
     app = create_app(
         catalog_path=os.environ.get("NOVEL_TRANSLATOR_CATALOG", "novels.yaml"),
         workspace_root=workspace,
         database_url=database_url,
         site_root=site_root,
+        github_token=github_token,
     )
     import uvicorn
 

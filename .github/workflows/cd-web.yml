@@ -44,6 +44,7 @@ jobs:
           test -n "${{ secrets.NOVEL_TRANSLATOR_API_KEY }}" || { echo "NOVEL_TRANSLATOR_API_KEY is empty"; exit 1; }
           test -n "${{ secrets.NOVEL_TRANSLATOR_AUTH_PASSWORD_HASH }}" || { echo "NOVEL_TRANSLATOR_AUTH_PASSWORD_HASH is empty"; exit 1; }
           test -n "${{ secrets.NOVEL_TRANSLATOR_SESSION_SECRET }}" || { echo "NOVEL_TRANSLATOR_SESSION_SECRET is empty"; exit 1; }
+          test -n "${{ secrets.NOVEL_TRANSLATOR_GITHUB_TOKEN }}" || { echo "NOVEL_TRANSLATOR_GITHUB_TOKEN is empty"; exit 1; }
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -89,6 +90,7 @@ jobs:
               --from-literal=api-key='${{ secrets.NOVEL_TRANSLATOR_API_KEY }}' \
               --from-literal=auth-password-hash='${{ secrets.NOVEL_TRANSLATOR_AUTH_PASSWORD_HASH }}' \
               --from-literal=session-secret='${{ secrets.NOVEL_TRANSLATOR_SESSION_SECRET }}' \
+              --from-literal=github-token='${{ secrets.NOVEL_TRANSLATOR_GITHUB_TOKEN }}' \
               --dry-run=client -o yaml | sudo k3s kubectl apply -f -
             sudo k3s kubectl create secret docker-registry ocir-secret -n novel-translator \
               --docker-server='${{ secrets.OCI_REGISTRY }}' \

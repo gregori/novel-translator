@@ -4,12 +4,21 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import replace
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
+from test_publish import FakePublisher
 
+from novel_translator.application.publish import (
+    PublishExport,
+    PublishOutcome,
+    SitePublisher,
+)
+from novel_translator.domain.errors import PublicationError
+from novel_translator.infrastructure.workspace import Workspace
 from novel_translator.shared.utils import sha256_text
 from novel_translator.web.app import create_app
 
@@ -99,6 +108,25 @@ def build_client(
     workspace.mkdir()
     database_url = f"sqlite:///{(tmp_path / 'web.sqlite').as_posix()}"
     app = create_app(config, workspace, database_url, site_root=site_root)
+    return TestClient(app), workspace
+
+
+def build_client_with_publisher(
+    tmp_path: Path, publisher: SitePublisher
+) -> tuple[TestClient, Path]:
+    """Compose the web app with a fake site publisher and no checkout."""
+    config = create_catalog(tmp_path)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    database_url = f"sqlite:///{(tmp_path / 'web.sqlite').as_posix()}"
+    app = create_app(config, workspace, database_url)
+    services = app.state.services
+    app.state.services = replace(
+        services,
+        publish_export=PublishExport(
+            Workspace(workspace), services.registry, publisher
+        ),
+    )
     return TestClient(app), workspace
 
 
@@ -553,7 +581,7 @@ def test_error_and_empty_states_orient_the_reader(tmp_path: Path) -> None:
         f"{CHAPTER_URL}/export", data={"run_choice": ""}
     )
     assert unconfigured.status_code == 400
-    assert "Exports are not configured" in unconfigured.text
+    assert "Server-side export is disabled" in unconfigured.text
 
 
 def test_textual_chapter_search_returns_no_matches(tmp_path: Path) -> None:
@@ -792,3 +820,139 @@ def test_chapter_defaults_to_source_with_split_container(
         "panel-edit": True,
         "panel-preview": True,
     }
+
+
+def test_chapter_without_site_checkout_offers_manual_export(
+    tmp_path: Path,
+) -> None:
+    """A host without checkout hides direct export but keeps download."""
+    client, workspace = build_client(tmp_path)
+    create_run(workspace, "a" * 32)
+    _approve_first_revision(client)
+
+    page = client.get(CHAPTER_URL).text
+    assert "Server-side export is disabled" in page
+    assert "gregori/novels-site" in page
+    assert "src/content/novels/novel/001.md" in page
+    assert "export/download" in page
+    assert "export/preview" in page
+    assert 'action="/novels/novel/chapters/1/export"' not in page
+
+    download = client.get(f"{CHAPTER_URL}/export/download?revision=1")
+    assert download.status_code == 200
+    assert "attachment" in download.headers["content-disposition"]
+
+    preview = client.get(f"{CHAPTER_URL}/export/preview?revision=1")
+    assert preview.status_code == 200
+    assert "Body." in preview.text
+
+    direct = client.post(
+        f"{CHAPTER_URL}/export", data={"revision": "1", "run_choice": ""}
+    )
+    assert direct.status_code == 400
+    assert "Server-side export is disabled" in direct.text
+
+
+def test_publish_opens_pull_request_from_review_room(
+    tmp_path: Path,
+) -> None:
+    """The review room opens a site PR for the approved artifact."""
+    publisher = FakePublisher()
+    client, workspace = build_client_with_publisher(tmp_path, publisher)
+    create_run(workspace, "a" * 32)
+    _approve_first_revision(client)
+
+    response = client.post(
+        f"{CHAPTER_URL}/publish",
+        data={"revision": "1", "run_choice": ""},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert publisher.calls[0]["repository"] == "gregori/novels-site"
+    assert publisher.calls[0]["path"] == "src/content/novels/novel/001.md"
+
+    assert "Publication pull request opened." in response.text
+    page = client.get(CHAPTER_URL).text
+    assert "Last pull request" in page
+
+
+def test_publish_without_token_orients_reviewer(tmp_path: Path) -> None:
+    """A host without a token explains manual publication instead."""
+    client, workspace = build_client(tmp_path)
+    create_run(workspace, "a" * 32)
+
+    assert "Publication is not configured" in client.get(CHAPTER_URL).text
+    assert (
+        'action="/novels/novel/chapters/1/publish"'
+        not in client.get(CHAPTER_URL).text
+    )
+
+    response = client.post(f"{CHAPTER_URL}/publish", data={"run_choice": ""})
+    assert response.status_code == 400
+    assert "Publication is not configured" in response.text
+
+
+def test_publish_requires_approval_in_review_room(tmp_path: Path) -> None:
+    """Unapproved artifacts cannot open a publication pull request."""
+    publisher = FakePublisher()
+    client, workspace = build_client_with_publisher(tmp_path, publisher)
+    create_run(workspace, "a" * 32)
+
+    response = client.post(f"{CHAPTER_URL}/publish", data={"run_choice": ""})
+    assert response.status_code == 409
+    assert publisher.calls == []
+
+
+def test_publish_failure_keeps_approval(tmp_path: Path) -> None:
+    """A GitHub outage surfaces as 502 without revoking approval."""
+    publisher = FakePublisher(error=PublicationError("GitHub is down."))
+    client, workspace = build_client_with_publisher(tmp_path, publisher)
+    create_run(workspace, "a" * 32)
+    _approve_first_revision(client)
+
+    response = client.post(
+        f"{CHAPTER_URL}/publish",
+        data={"revision": "1", "run_choice": ""},
+    )
+    assert response.status_code == 502
+    assert "Approved" in client.get(CHAPTER_URL).text
+
+
+def test_publish_reports_already_published_without_new_pr(
+    tmp_path: Path,
+) -> None:
+    """An up-to-date site reports success without claiming a new PR."""
+    publisher = FakePublisher(
+        outcome=PublishOutcome(
+            git_commit="base-sha",
+            pull_request_url=None,
+            branch="novel-translator/novel-ch1-deadbeef",
+            created=False,
+        )
+    )
+    client, workspace = build_client_with_publisher(tmp_path, publisher)
+    create_run(workspace, "a" * 32)
+    _approve_first_revision(client)
+
+    page = client.post(
+        f"{CHAPTER_URL}/publish",
+        data={"revision": "1", "run_choice": ""},
+        follow_redirects=True,
+    ).text
+    assert "Already published" in page
+    assert "Last pull request" not in page
+
+
+def test_create_app_with_token_enables_publish_form(tmp_path: Path) -> None:
+    """The token wiring renders the enabled Publish form with no checkout."""
+    config = create_catalog(tmp_path)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    database_url = f"sqlite:///{(tmp_path / 'web.sqlite').as_posix()}"
+    app = create_app(config, workspace, database_url, github_token="token")
+    client = TestClient(app)
+    create_run(workspace, "a" * 32)
+
+    page = client.get(CHAPTER_URL).text
+    assert 'action="/novels/novel/chapters/1/publish"' in page
+    assert "Opens a pull request" in page

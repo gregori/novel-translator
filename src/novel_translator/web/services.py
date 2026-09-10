@@ -30,6 +30,7 @@ from novel_translator.application.jobs import (
     RequestJobCancellation,
     RetryTranslationJob,
 )
+from novel_translator.application.publish import PublishExport
 from novel_translator.application.review import GetDiff, ListRevisions
 from novel_translator.application.working_copy import (
     CreateRevisionFromWorkingCopy,
@@ -59,6 +60,7 @@ class Services:
     export_artifact: ExportArtifact
     preview_export: PreviewExport
     list_export_history: ListExportHistory
+    publish_export: PublishExport | None
     get_working_copy: GetWorkingCopy
     start_working_copy: StartWorkingCopy
     save_working_copy: SaveWorkingCopy
@@ -92,8 +94,9 @@ class Services:
         """Resolve the export destination inside the site checkout."""
         if self.site_root is None:
             raise NovelTranslatorError(
-                "Exports are not configured: this server was started "
-                "without a site checkout root."
+                "Server-side export is disabled on this host: "
+                "no site checkout is configured. "
+                "Download the approved Markdown and commit it manually."
             )
         return self.registry.export_destination(novel, chapter, self.site_root)
 

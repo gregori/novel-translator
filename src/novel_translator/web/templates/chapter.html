@@ -140,6 +140,7 @@
 {% if view.revisions or has_draft %}
 <h2>Export</h2>
 <div class="card" data-export-toolbar data-run-choice="{{ view.run_choice or '' }}">
+  {% if export_enabled %}
   <p class="muted">Writes the approved artifact into the configured site checkout.</p>
   <form method="post" action="{{ view.urls.export_url }}" class="toolbar">
     <input type="hidden" name="run_choice" value="{{ view.run_choice or '' }}">
@@ -156,6 +157,20 @@
     <label class="muted"><input type="checkbox" name="overwrite"> replace existing file</label>
     <button type="submit">Export</button>
   </form>
+  {% else %}
+  <p class="muted">Server-side export is disabled on this host. Download the approved Markdown below and commit it to <code>{{ export_path }}</code> in <code>{{ export_repository }}</code>.</p>
+  {% if view.revisions %}
+  <p class="muted">Revision picker still applies to View and Download.</p>
+  <select name="revision" data-export-revision aria-label="Artifact to export">
+    {% for revision in view.revisions %}
+    <option value="{{ revision.ordinal }}" {% if revision.approved %}selected{% endif %}>
+      Revision {{ revision.ordinal }}{% if revision.approved %} — approved{% endif %}
+    </option>
+    {% endfor %}
+    {% if has_draft %}<option value="">Generated draft</option>{% endif %}
+  </select>
+  {% endif %}
+  {% endif %}
   <div class="toolbar">
     <a class="btn-quiet secondary" data-export-download href="{{ view.urls.export_download_url }}">Download</a>
     <button class="btn-quiet secondary"
@@ -169,6 +184,32 @@
   {% endif %}
   <div id="export-preview-slot"></div>
 </div>
+<h2>Publish</h2>
+<div class="card">
+  {% if publish_enabled %}
+  <p class="muted">Opens a pull request in <code>{{ export_repository }}</code> with the approved Markdown at <code>{{ export_path }}</code>. Never pushes directly.</p>
+  <form method="post" action="{{ view.urls.publish_url }}" class="toolbar">
+    <input type="hidden" name="run_choice" value="{{ view.run_choice or '' }}">
+    {% if view.revisions %}
+    <select name="revision" aria-label="Artifact to publish">
+      {% for revision in view.revisions %}
+      <option value="{{ revision.ordinal }}" {% if revision.approved %}selected{% endif %}>
+        Revision {{ revision.ordinal }}{% if revision.approved %} — approved{% endif %}
+      </option>
+      {% endfor %}
+      {% if has_draft %}<option value="">Generated draft</option>{% endif %}
+    </select>
+    {% endif %}
+    <button type="submit">Open pull request</button>
+  </form>
+  {% else %}
+  <p class="muted">Publication is not configured on this host. Set a GitHub token to open pull requests, or download above and commit manually.</p>
+  {% endif %}
+  {% if last_pull_request_url %}
+  <p class="muted">Last pull request · <a href="{{ last_pull_request_url }}">open</a></p>
+  {% endif %}
+</div>
+
 {% endif %}
 
 {% if view.technical %}

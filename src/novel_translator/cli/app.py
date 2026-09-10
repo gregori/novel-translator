@@ -29,6 +29,10 @@ from novel_translator.application.prepare import (
     PrepareTranslation,
     PrepareTranslationInput,
 )
+from novel_translator.application.publish import (
+    PublishExport,
+    PublishExportInput,
+)
 from novel_translator.application.review import (
     CreateRevision,
     CreateRevisionInput,
@@ -51,6 +55,7 @@ from novel_translator.domain.models import ChapterIdentity
 from novel_translator.infrastructure.catalog import load_catalog
 from novel_translator.infrastructure.database import Database
 from novel_translator.infrastructure.export import FilesystemArtifactWriter
+from novel_translator.infrastructure.github import GitHubSitePublisher
 from novel_translator.infrastructure.providers import (
     OpenCodeGoConfig,
     resolve_provider,
@@ -335,6 +340,52 @@ def export_command(
     except NovelTranslatorError as error:
         fail(error)
     typer.echo(f"Exported: {result.path}")
+
+
+@app.command("publish")
+def publish_command(
+    run_id: str | None = typer.Argument(None),
+    novel: str | None = typer.Option(None),
+    chapter: int | None = typer.Option(None, min=1),
+    run_choice: int | None = typer.Option(None, min=1),
+    config: Path = typer.Option(Path("novels.yaml")),
+    workspace: Path = typer.Option(Path(".novel-translator")),
+    revision: str | None = typer.Option(None),
+    title: str | None = typer.Option(None),
+    publish_date: str | None = typer.Option(None, "--publish-date"),
+    github_token: str | None = typer.Option(
+        None, "--github-token", envvar="NOVEL_TRANSLATOR_GITHUB_TOKEN"
+    ),
+) -> None:
+    """Open a novels-site pull request for one approved artifact."""
+    try:
+        if novel is None or chapter is None:
+            raise ValidationError("Provide both --novel and --chapter.")
+        selected_run_id = resolve_run_id(
+            run_id, novel, chapter, run_choice, config, workspace
+        )
+        if github_token is None:
+            raise ValidationError(
+                "Provide --github-token or NOVEL_TRANSLATOR_GITHUB_TOKEN."
+            )
+        registry = load_catalog(config)
+        result = PublishExport(
+            Workspace(workspace),
+            registry,
+            GitHubSitePublisher(github_token),
+        ).execute(
+            PublishExportInput(
+                run_id=selected_run_id,
+                novel=novel,
+                chapter=chapter,
+                revision_id=revision,
+                title=title,
+                publish_date=publish_date,
+            )
+        )
+    except NovelTranslatorError as error:
+        fail(error)
+    typer.echo(f"Published: {result.pull_request_url or result.git_commit}")
 
 
 @app.command()

@@ -47,3 +47,7 @@ class WorkingCopyConflict(NovelTranslatorError):
         self.current_version = current_version
         self.submitted_content = submitted_content
         self.submitted_version = submitted_version
+
+
+class PublicationError(NovelTranslatorError):
+    """Raised when opening a publication pull request fails upstream."""

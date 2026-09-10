@@ -15,10 +15,12 @@ revisão no mesmo nó k3s que já roda o dojo-full. Segue o padrão do
 - 1 `PVC` `local-path` de 5Gi montado em `/data` (runs, editorial,
   `working-copies.sqlite`). Configuração (`novels.yaml`, `config/`,
   `novel-sources/`) vai assada na imagem; estado mutável fica no PVC.
-- Sem `NOVEL_TRANSLATOR_SITE_ROOT` no cluster: a exportação fica
-  desabilitada (o botão retorna 400 orientando). Publicação no
-  `novels-site` continua manual até a Fase 6 (bot com Deploy Key
-  abrindo PR, nunca push direto).
+- Sem `NOVEL_TRANSLATOR_SITE_ROOT` no cluster: a exportação direta em
+  checkout fica desabilitada (o botão retorna 400 orientando).
+  A publicação é o card `Publish` da página do capítulo: abre um pull
+  request no `novels-site` com o Markdown aprovado (branch
+  `novel-translator/<novel>-ch<cap>-<hash>`, nunca push direto).
+  Download/View/Copy continuam manuais e sem checkout.
 - Traduções partem da página `/translate`: o `web` enfileira um job
   persistente e o `worker` executa o caso de uso `StartTranslation`.
   Fechar o navegador não interrompe; a página do job atualiza por
@@ -70,6 +72,7 @@ Reusar os mesmos valores do dojo onde indicado:
 | `NOVEL_TRANSLATOR_API_KEY` | chave do provider (só no servidor) |
 | `NOVEL_TRANSLATOR_AUTH_PASSWORD_HASH` | hash scrypt da senha (`hash_password`) |
 | `NOVEL_TRANSLATOR_SESSION_SECRET` | 32+ chars aleatórios (ex. `secrets.token_hex(32)`) |
+| `NOVEL_TRANSLATOR_GITHUB_TOKEN` | token fino no `gregori/novels-site` (Contents:write, Pull requests:write) |
 | `INGRESS_HOST` | ex. `novels.gregori.eti.br` (apontar o DNS ao nó) |
 
 ## Primeiro deploy
@@ -97,6 +100,15 @@ Volte a 1 réplica e confira o dashboard. Depois disso, prefira traduzir
 pela página `/translate` da própria sala — o worker escreve direto no
 PVC, sem nova semeadura. A CLI continua servindo para operação local;
 nesse caso repita o envio acima (o PVC segue autoritativo).
+
+## Publicação
+
+Aprovar a revisão, abrir o card `Publish` e confirmar: o servidor cria
+a branch, escreve o Markdown e abre o PR, mostrando o link na página
+(`Last pull request`). Reexportar o mesmo conteúdo reaproveita o PR
+aberto; se o arquivo-base já tem os bytes exatos, nada é criado.
+Falha no GitHub não revoga a aprovação (502 orientando, tente de novo).
+O merge continua manual no `novels-site`.
 
 ## Backup e restore
 

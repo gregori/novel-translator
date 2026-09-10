@@ -12,6 +12,8 @@ from novel_translator.application.export import (
     ExportArtifactInput,
     PreviewExportInput,
 )
+from novel_translator.application.publish import PublishExportInput
+from novel_translator.domain.errors import NovelTranslatorError
 from novel_translator.web.routes.support import (
     parse_choice,
     redirect_done,
@@ -116,6 +118,44 @@ def export(
         )
     )
     return redirect_done(novel, chapter, choice, "exported")
+
+
+@router.post(
+    "/novels/{novel}/chapters/{chapter}/publish",
+    response_class=HTMLResponse,
+    name="publish",
+)
+def publish(
+    request: Request,
+    novel: str,
+    chapter: int,
+    run_choice: Annotated[str | None, Form()] = None,
+    revision: Annotated[str | None, Form()] = None,
+) -> Response:
+    """Open a novels-site pull request for the approved artifact."""
+    services: Services = request.app.state.services
+    require_novel(services, novel)
+    publisher = services.publish_export
+    if publisher is None:
+        raise NovelTranslatorError(
+            "Publication is not configured: this server was started "
+            "without a GitHub token. "
+            "Download the approved Markdown and commit it manually."
+        )
+    choice = parse_choice(run_choice)
+    run_id = run_id_for(services, novel, chapter, choice)
+    revision_id = revision_id_for(services, run_id, parse_choice(revision))
+    result = publisher.execute(
+        PublishExportInput(
+            run_id=run_id,
+            novel=novel,
+            chapter=chapter,
+            revision_id=revision_id,
+        )
+    )
+    if result.created:
+        return redirect_done(novel, chapter, choice, "published")
+    return redirect_done(novel, chapter, choice, "already-published")
 
 
 def _preview_content(

@@ -169,12 +169,17 @@ def chapter_page(
     )
     revisions = revision_views(result.revisions)
     last_export: ExportEvent | None = None
+    last_pull_request_url: str | None = None
     if result.run_id is not None:
         with suppress(NovelTranslatorError):
             history = services.list_export_history.execute(
                 ExportHistoryInput(run_id=result.run_id)
             )
             last_export = history[-1] if history else None
+            for event in reversed(history):
+                if event.pull_request_url is not None:
+                    last_pull_request_url = event.pull_request_url
+                    break
     view = ChapterView(
         novel=novel,
         title=services.novel_title(novel),
@@ -198,6 +203,7 @@ def chapter_page(
     )
     has_draft = result.draft is not None
     flash_key = request.query_params.get("done")
+    export_config = services.registry.novel(novel).export
     return templates.TemplateResponse(
         request,
         "chapter.html",
@@ -208,6 +214,14 @@ def chapter_page(
             "draft_approved": result.draft_approved,
             "flash": FLASH_MESSAGES.get(flash_key) if flash_key else None,
             "last_export": last_export,
+            "export_enabled": services.site_root is not None,
+            "export_repository": export_config.repository,
+            "export_path": (
+                f"{export_config.directory.as_posix()}/"
+                f"{services.export_filename(novel, chapter)}"
+            ),
+            "publish_enabled": services.publish_export is not None,
+            "last_pull_request_url": last_pull_request_url,
         },
     )
 

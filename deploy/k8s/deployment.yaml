@@ -67,6 +67,11 @@ spec:
                 secretKeyRef:
                   name: novel-translator-secrets
                   key: session-secret
+            - name: NOVEL_TRANSLATOR_GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: novel-translator-secrets
+                  key: github-token
           volumeMounts:
             - name: workspace
               mountPath: /data

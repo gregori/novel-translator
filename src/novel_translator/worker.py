@@ -3,7 +3,8 @@
 Configuration comes from ``NOVEL_TRANSLATOR_*`` environment variables
 read by :func:`main`:
 
-- ``NOVEL_TRANSLATOR_CATALOG`` (default ``novels.yaml``)
+- ``NOVEL_TRANSLATOR_CATALOG`` (default ``/data/novels.yaml``)
+- ``NOVEL_TRANSLATOR_CATALOG_SEED`` (default ``/app/novels.yaml``)
 - ``NOVEL_TRANSLATOR_WORKSPACE`` (default ``.novel-translator``)
 - ``NOVEL_TRANSLATOR_DATABASE`` (default
   ``sqlite:///<workspace>/working-copies.sqlite``)
@@ -51,6 +52,7 @@ from novel_translator.domain.translation import (
 )
 from novel_translator.infrastructure.catalog import (
     NovelRegistry,
+    ensure_catalog_seeded,
     load_catalog,
 )
 from novel_translator.infrastructure.database import Database
@@ -383,7 +385,9 @@ def _load_config(workspace_default: str = ".novel-translator") -> WorkerConfig:
             "sqlite:///" + (workspace / "working-copies.sqlite").as_posix()
         )
     return WorkerConfig(
-        catalog_path=Path(_env("NOVEL_TRANSLATOR_CATALOG", "novels.yaml")),
+        catalog_path=Path(
+            _env("NOVEL_TRANSLATOR_CATALOG", "/data/novels.yaml")
+        ),
         workspace_root=workspace,
         database_url=database_url,
         base_url=_env("NOVEL_TRANSLATOR_BASE_URL", "http://localhost:8080"),
@@ -403,6 +407,12 @@ def _load_config(workspace_default: str = ".novel-translator") -> WorkerConfig:
 def main() -> None:
     """Drain queued translation jobs until interrupted."""
     config = _load_config()
+    ensure_catalog_seeded(
+        Path(
+            os.environ.get("NOVEL_TRANSLATOR_CATALOG_SEED", "/app/novels.yaml")
+        ),
+        config.catalog_path,
+    )
     database = Database(config.database_url)
     database.prepare()
     store: TranslationJobStore = SqlAlchemyTranslationJobRepository(database)

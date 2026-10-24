@@ -20,6 +20,10 @@ from novel_translator.application.approve import (
     ApproveArtifact,
     RevokeApproval,
 )
+from novel_translator.application.bundles import (
+    ExportRunBundle,
+    ImportRunBundle,
+)
 from novel_translator.application.catalog import (
     ListChapters,
     ListDashboard,
@@ -38,6 +42,7 @@ from novel_translator.application.jobs import (
     RequestJobCancellation,
     RetryTranslationJob,
 )
+from novel_translator.application.novels import RegisterNovel
 from novel_translator.application.publish import PublishExport
 from novel_translator.application.review import GetDiff, ListRevisions
 from novel_translator.application.working_copy import (
@@ -55,7 +60,11 @@ from novel_translator.domain.errors import (
     NovelTranslatorError,
     PublicationError,
 )
-from novel_translator.infrastructure.catalog import NovelRegistry, load_catalog
+from novel_translator.infrastructure.catalog import (
+    NovelRegistry,
+    ensure_catalog_seeded,
+    load_catalog,
+)
 from novel_translator.infrastructure.database import Database
 from novel_translator.infrastructure.export import FilesystemArtifactWriter
 from novel_translator.infrastructure.github import GitHubSitePublisher
@@ -151,15 +160,53 @@ class _OriginCheckMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+class _CatalogReloadMiddleware(BaseHTTPMiddleware):
+    """Refresh the mutable catalog projection before every web request."""
+
+    _max_stale_serves: int = 3
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        if request.url.path == "/healthz" or request.url.path.startswith(
+            "/static/"
+        ):
+            return await call_next(request)
+        services: Services = request.app.state.services
+        try:
+            # Serve the last good projection while the catalog on disk
+            # is momentarily unreadable; persistent corruption answers
+            # 500 after a few stale serves so operators notice.
+            services.registry.reload()
+        except NovelTranslatorError:
+            failures = int(
+                getattr(request.app.state, "catalog_reload_failures", 0)
+            )
+            request.app.state.catalog_reload_failures = failures + 1
+            if failures + 1 > self._max_stale_serves:
+                return PlainTextResponse(
+                    "Novel catalog is unavailable.", status_code=500
+                )
+            return await call_next(request)
+        request.app.state.catalog_reload_failures = 0
+        return await call_next(request)
+
+
 def create_app(
     catalog_path: str | Path,
     workspace_root: str | Path,
     database_url: str,
     site_root: str | Path | None = None,
     github_token: str | None = None,
+    catalog_seed: str | Path | None = None,
 ) -> FastAPI:
     """Compose the reading and review room over shared use cases."""
-    registry = load_catalog(Path(catalog_path))
+    catalog_target = Path(catalog_path)
+    if catalog_seed is not None:
+        ensure_catalog_seeded(Path(catalog_seed), catalog_target)
+    registry = load_catalog(catalog_target)
     workspace = Workspace(Path(workspace_root))
     database = Database(database_url)
     database.prepare()
@@ -185,6 +232,9 @@ def create_app(
         preview_export=PreviewExport(workspace),
         list_export_history=ListExportHistory(workspace),
         publish_export=_publish_export(registry, workspace, github_token),
+        export_run_bundle=ExportRunBundle(workspace),
+        import_run_bundle=ImportRunBundle(workspace, registry),
+        register_novel=RegisterNovel(registry),
         get_working_copy=GetWorkingCopy(working_copies),
         start_working_copy=StartWorkingCopy(workspace, working_copies),
         save_working_copy=SaveWorkingCopy(working_copies),
@@ -217,6 +267,7 @@ def create_app(
     app.include_router(routes.router)
     app.add_middleware(AuthMiddleware)
     app.add_middleware(_OriginCheckMiddleware)
+    app.add_middleware(_CatalogReloadMiddleware)
 
     async def _healthz() -> PlainTextResponse:
         """Answer orchestrator probes without templates or state."""
@@ -277,11 +328,16 @@ def main() -> None:
     site_root = os.environ.get("NOVEL_TRANSLATOR_SITE_ROOT")
     github_token = os.environ.get("NOVEL_TRANSLATOR_GITHUB_TOKEN")
     app = create_app(
-        catalog_path=os.environ.get("NOVEL_TRANSLATOR_CATALOG", "novels.yaml"),
+        catalog_path=os.environ.get(
+            "NOVEL_TRANSLATOR_CATALOG", "/data/novels.yaml"
+        ),
         workspace_root=workspace,
         database_url=database_url,
         site_root=site_root,
         github_token=github_token,
+        catalog_seed=os.environ.get(
+            "NOVEL_TRANSLATOR_CATALOG_SEED", "/app/novels.yaml"
+        ),
     )
     import uvicorn
 

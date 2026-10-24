@@ -212,6 +212,19 @@
 
 {% endif %}
 
+<h2>Sync</h2>
+<div class="card">
+  <p class="muted">Move this run between machines. Bundles carry the verified draft, revisions, approvals, and exports — never editing sessions.</p>
+  <div class="toolbar">
+    <a class="btn-quiet secondary" href="{{ view.urls.bundle_url }}">Download bundle</a>
+  </div>
+  <form method="post" action="{{ view.urls.bundle_import_url }}" enctype="multipart/form-data" class="toolbar">
+    <input type="hidden" name="run_choice" value="{{ view.run_choice or '' }}">
+    <input type="file" name="bundle" accept=".ntbundle,.zip" aria-label="Run bundle to import">
+    <button type="submit" class="secondary">Import bundle</button>
+  </form>
+</div>
+
 {% if view.technical %}
 <details class="tech">
   <summary>Technical details</summary>

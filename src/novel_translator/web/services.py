@@ -9,6 +9,10 @@ from novel_translator.application.approve import (
     ApproveArtifact,
     RevokeApproval,
 )
+from novel_translator.application.bundles import (
+    ExportRunBundle,
+    ImportRunBundle,
+)
 from novel_translator.application.catalog import (
     ChapterCatalog,
     DashboardCatalog,
@@ -30,6 +34,7 @@ from novel_translator.application.jobs import (
     RequestJobCancellation,
     RetryTranslationJob,
 )
+from novel_translator.application.novels import RegisterNovel
 from novel_translator.application.publish import PublishExport
 from novel_translator.application.review import GetDiff, ListRevisions
 from novel_translator.application.working_copy import (
@@ -61,6 +66,9 @@ class Services:
     preview_export: PreviewExport
     list_export_history: ListExportHistory
     publish_export: PublishExport | None
+    export_run_bundle: ExportRunBundle
+    import_run_bundle: ImportRunBundle
+    register_novel: RegisterNovel
     get_working_copy: GetWorkingCopy
     start_working_copy: StartWorkingCopy
     save_working_copy: SaveWorkingCopy

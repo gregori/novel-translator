@@ -28,6 +28,7 @@ FLASH_MESSAGES: dict[str, str] = {
     "revoked": "Approval revoked.",
     "exported": "Export completed into the site checkout.",
     "published": "Publication pull request opened.",
+    "bundle-imported": "Bundle imported and verified.",
     "already-published": "Already published — no new pull request needed.",
 }
 
@@ -126,6 +127,8 @@ def chapter_urls(
         "export_url": f"{base}/export{suffix}",
         "export_preview_url": f"{base}/export/preview{suffix}",
         "export_download_url": f"{base}/export/download{suffix}",
+        "bundle_url": f"{base}/bundle{suffix}",
+        "bundle_import_url": f"{base}/bundle/import",
         "publish_url": f"{base}/publish{suffix}",
     }
 

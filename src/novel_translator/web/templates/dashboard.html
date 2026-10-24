@@ -23,6 +23,9 @@
 </ul>
 {% endif %}
 
+<div class="toolbar">
+  <a class="btn-quiet secondary" href="/novels/new">New novel</a>
+</div>
 {% if novels %}
 <h2>Novels</h2>
 <ul class="listing card">
@@ -40,7 +43,7 @@
 {% else %}
 <div class="empty">
   No novels registered yet.
-  <div class="hint">Add a novel to <code>novels.yaml</code> to see it here.</div>
+  <div class="hint"><a href="/novels/new">Register a novel</a> to see it here.</div>
 </div>
 {% endif %}
 

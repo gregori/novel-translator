@@ -13,6 +13,12 @@ from novel_translator.application.approve import (
     ArtifactApprovalInput,
     RevokeApproval,
 )
+from novel_translator.application.bundles import (
+    ExportRunBundle,
+    ExportRunBundleInput,
+    ImportRunBundle,
+    ImportRunBundleInput,
+)
 from novel_translator.application.catalog import (
     ListChapters,
     ListChaptersInput,
@@ -25,6 +31,11 @@ from novel_translator.application.export import (
     ExportArtifactInput,
 )
 from novel_translator.application.inspect import GetChapter, GetChapterInput
+from novel_translator.application.novels import (
+    RegisterNovel,
+    RegisterNovelInput,
+    validate_source_filename,
+)
 from novel_translator.application.prepare import (
     PrepareTranslation,
     PrepareTranslationInput,
@@ -146,6 +157,82 @@ def novels(
             f"Skipped run entry {issue.entry} ({issue.error.value})",
             err=True,
         )
+
+
+novel_app = typer.Typer(no_args_is_help=True)
+app.add_typer(novel_app, name="novel")
+
+
+@novel_app.command("register")
+def novel_register_command(
+    novel_id: str = typer.Option(..., "--novel-id"),
+    title: str = typer.Option(...),
+    provider: str = typer.Option("opencode-go"),
+    model: str = typer.Option(...),
+    volume: int | None = typer.Option(None, min=1),
+    kakuyomu_work: str | None = typer.Option(None, "--kakuyomu-work"),
+    bible: Path | None = typer.Option(None, exists=True, readable=True),
+    bible_text: str | None = typer.Option(None, "--bible-text"),
+    export_repo: str = typer.Option("gregori/novels-site", "--export-repo"),
+    export_dir: str | None = typer.Option(None, "--export-dir"),
+    export_template: str = typer.Option(
+        "{chapter:03}.md", "--export-template"
+    ),
+    config: Path = typer.Option(
+        Path("novels.yaml"), exists=True, readable=True
+    ),
+    source_dir: Path | None = typer.Option(None, "--source-dir"),
+) -> None:
+    """Register a novel with its bible and an empty source directory."""
+    try:
+        if kakuyomu_work is not None:
+            stripped = kakuyomu_work.strip().rstrip("/")
+            root = (
+                (
+                    stripped
+                    if stripped.endswith("/episodes")
+                    else f"{stripped}/episodes"
+                )
+                if stripped
+                else None
+            )
+        else:
+            root = None
+        sources: dict[str, str] | None = None
+        if source_dir is not None:
+            if not source_dir.is_dir():
+                raise ValidationError(
+                    "Source directory for initial chapters is not "
+                    f"a directory: {source_dir}."
+                )
+            collected: dict[str, str] = {}
+            for entry in sorted(source_dir.iterdir(), key=lambda p: p.name):
+                if entry.is_file() and not entry.is_symlink():
+                    validate_source_filename(entry.name)
+                    collected[entry.name] = entry.read_text(encoding="utf-8")
+            sources = collected or None
+        result = RegisterNovel(load_catalog(config)).execute(
+            RegisterNovelInput(
+                novel_id=novel_id,
+                title=title,
+                model=model,
+                export_repository=export_repo,
+                bible_text=bible_text,
+                bible_path=bible,
+                source_files=sources,
+                kakuyomu_episode_root=root,
+                provider=provider,
+                default_volume=volume,
+                export_directory=export_dir,
+                export_filename_template=export_template,
+            )
+        )
+    except NovelTranslatorError as error:
+        fail(error)
+    typer.echo(
+        f"Registered: {result.novel_id} "
+        f"({result.source_directory} sources, bible {result.bible})"
+    )
 
 
 @app.command()
@@ -508,6 +595,70 @@ def diff_command(
         typer.echo(result.content, nl=False)
     except NovelTranslatorError as error:
         fail(error)
+
+
+bundle_app = typer.Typer(no_args_is_help=True)
+app.add_typer(bundle_app, name="bundle")
+
+
+@bundle_app.command("export")
+def bundle_export_command(
+    run_id: str | None = typer.Argument(None),
+    output: Path | None = typer.Option(None, "-o", "--output"),
+    novel: str | None = typer.Option(None),
+    chapter: int | None = typer.Option(None, min=1),
+    run_choice: int | None = typer.Option(None, min=1),
+    config: Path = typer.Option(Path("novels.yaml")),
+    workspace: Path = typer.Option(Path(".novel-translator")),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Bundle one verified run for local and web sync."""
+    try:
+        selected_run_id = resolve_run_id(
+            run_id, novel, chapter, run_choice, config, workspace
+        )
+        result = ExportRunBundle(Workspace(workspace)).execute(
+            ExportRunBundleInput(selected_run_id)
+        )
+        destination = output or Path(result.filename)
+        destination.write_bytes(result.payload)
+    except NovelTranslatorError as error:
+        fail(error)
+    typer.echo(
+        json.dumps({"run_id": result.run_id, "path": str(destination)})
+        if json_output
+        else f"Bundle exported: {destination}"
+    )
+
+
+@bundle_app.command("import")
+def bundle_import_command(
+    bundle: Path = typer.Argument(..., exists=True, readable=True),
+    workspace: Path = typer.Option(Path(".novel-translator")),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Verify and store one run bundle without touching session state."""
+    try:
+        result = ImportRunBundle(Workspace(workspace)).execute(
+            ImportRunBundleInput(bundle.read_bytes())
+        )
+    except NovelTranslatorError as error:
+        fail(error)
+    typer.echo(
+        json.dumps(
+            {
+                "run_id": result.run_id,
+                "novel": result.novel,
+                "chapter": result.chapter,
+                "created": result.created,
+            }
+        )
+        if json_output
+        else (
+            f"Bundle imported: {result.novel} chapter {result.chapter}"
+            + ("" if result.created else " (already present)")
+        )
+    )
 
 
 @app.command("migrate-legacy-draft")

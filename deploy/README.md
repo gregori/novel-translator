@@ -24,9 +24,11 @@ revisão no mesmo nó k3s que já roda o dojo-full. Segue o padrão do
 - Traduções partem da página `/translate`: o `web` enfileira um job
   persistente e o `worker` executa o caso de uso `StartTranslation`.
   Fechar o navegador não interrompe; a página do job atualiza por
-  polling HTMX. Como o PVC é a cópia autoritativa, semear o PVC
-  continua necessário uma vez (ver “Semeando runs” abaixo).
-
+  polling HTMX. Novels novas nascem em `/novels/new` (ou
+  `novel register` na CLI): bible em `config/`, sources em
+  `novel-sources/`, entrada anexada ao `novels.yaml` no volume.
+  Como o PVC é a cópia autoritativa, semear o catálogo acontece
+  sozinho no primeiro boot (cópia de `/app/novels.yaml`).
 ## Proteção de acesso
 
 Sem basicAuth do Traefik: a sala tem login próprio, de senha única,
@@ -83,23 +85,39 @@ Reusar os mesmos valores do dojo onde indicado:
 4. Abrir `https://<INGRESS_HOST>/login` — após o login, o dashboard
    mostra a sala; `/healthz` responde `ok` sem login (probes).
 
-## Semeando runs
+## Novels novas e sincronização local↔web
 
+Nova novel: abra `/novels/new` na sala (ou `novel register` na CLI
+local) informando id, título, bible (texto ou YAML), provider/modelo
+e destino de export. A bible é validada antes do registro e o source
+dir é criado vazio — o capítulo entra depois por upload/episódio no
+`/translate` ou por arquivo `chapter-N.md` no source dir.
+
+Sync de runs: cada capítulo tem um card Sync com download do bundle
+(`.ntbundle`: run verificado + ledgers, sem working copies). Importe
+o arquivo na outra ponta — página da novel, página do capítulo ou
+`bundle import` na CLI. Reimport idêntico é no-op; bytes divergentes
+para o mesmo run id são recusados. O `tar` integral abaixo continua
+válido como migração inicial, mas o dia a dia usa bundles.
+
+## Semeando runs (migração inicial)
+
+ ANTIGO:
 No primeiro deploy o PVC está vazio: a CLI traduz contra o workspace
-local, a sala lê `/data` no cluster. Envie o workspace local uma vez
-com o mesmo Pod descartável do backup, em sentido inverso (com o
-Deployment em zero réplicas):
-
-```bash
-tar czf - -C .novel-translator . | sudo k3s kubectl run seed-copy --rm -i \
-  --restart=Never -n novel-translator --image=busybox:1.36 \
-  --overrides='{"spec":{"volumes":[{"name":"workspace","persistentVolumeClaim":{"claimName":"novel-translator-data"}}],"containers":[{"name":"seed-copy","image":"busybox:1.36","stdin":true,"command":["tar","xzf","-","-C","/data"],"volumeMounts":[{"name":"workspace","mountPath":"/data"}]}]}}'
-```
-
+local, a sala lê `/data` no cluster. O catálogo semeia sozinho
+(`/data/novels.yaml` a partir da imagem). Para runs históricos,
+prefira bundles por capítulo; para o volume inteiro de uma vez,
+envie o workspace local com o Pod descartável do backup, em sentido
+inverso (com o Deployment em zero réplicas):
+ 
+ ```bash
+ tar czf - -C .novel-translator . | sudo k3s kubectl run seed-copy --rm -i \
+ ```
+ 
 Volte a 1 réplica e confira o dashboard. Depois disso, prefira traduzir
 pela página `/translate` da própria sala — o worker escreve direto no
 PVC, sem nova semeadura. A CLI continua servindo para operação local;
-nesse caso repita o envio acima (o PVC segue autoritativo).
+nesse caso sincronize por bundle (o PVC segue autoritativo).
 
 ## Publicação
 

@@ -1,13 +1,19 @@
 """Validated YAML configuration and source discovery for registered novels."""
 
+import os
 import re
+import tempfile
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 
 import yaml
+from filelock import FileLock
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from novel_translator.domain.errors import ValidationError
+from novel_translator.infrastructure.source import load_bible
 
 _NOVEL_ID = re.compile(r"[a-z0-9][a-z0-9-]*")
 _SOURCE_NAME = re.compile(r"chapter-(?P<chapter>[1-9][0-9]*)\.(?:md|txt)")
@@ -133,6 +139,7 @@ class NovelRegistry:
 
     path: Path
     config: CatalogConfig
+    observed_mtime_ns: int | None = None
 
     def novel(self, novel_id: str) -> NovelConfig:
         """Return one registered novel or a controlled validation error."""
@@ -222,6 +229,152 @@ class NovelRegistry:
         filename = novel.export.filename_template.format(chapter=chapter)
         return root / novel.export.directory / filename
 
+    def reload(self) -> NovelRegistry:
+        """Refresh this registry when the file moved since it last saw it."""
+        try:
+            changed = self.path.stat().st_mtime_ns
+        except OSError:
+            return self
+        if self.observed_mtime_ns == changed:
+            return self
+        fresh = load_catalog(self.path)
+        object.__setattr__(self, "config", fresh.config)
+        object.__setattr__(self, "observed_mtime_ns", fresh.observed_mtime_ns)
+        return self
+
+    def register_novel(
+        self,
+        novel_id: str,
+        config: NovelConfig,
+        bible_text: str | None = None,
+        source_files: dict[str, str] | None = None,
+    ) -> NovelRegistry:
+        """Append one novel atomically, then return a reloaded registry."""
+        normalized = novel_id.strip()
+        if _NOVEL_ID.fullmatch(normalized) is None:
+            raise ValidationError(
+                f"Invalid novel identifier '{normalized or '<empty>'}'. "
+                "Use lowercase letters, digits, and hyphens."
+            )
+        if normalized in self.all_run_identities():
+            raise ValidationError(
+                f"Novel is already registered: {normalized}. "
+                "Remove it from novels.yaml before registering it again."
+            )
+        identities = set(self.all_run_identities())
+        for identity in (normalized, *config.run_aliases):
+            if _NOVEL_ID.fullmatch(identity) is None:
+                raise ValidationError(
+                    f"Invalid novel identifier '{identity}'. "
+                    "Use lowercase letters, digits, and hyphens."
+                )
+            if identity in identities:
+                raise ValidationError(
+                    f"Novel identifier {identity} is already registered."
+                )
+            identities.add(identity)
+        lock_path = self.path.with_suffix(self.path.suffix + ".lock")
+        with FileLock(str(lock_path)):
+            current = load_catalog(self.path)
+            if normalized in current.all_run_identities():
+                raise ValidationError(
+                    f"Novel is already registered: {normalized}. "
+                    "Remove it from novels.yaml before registering it again."
+                )
+            for identity in config.run_aliases:
+                if identity in current.all_run_identities():
+                    raise ValidationError(
+                        f"Novel identifier {identity} is already registered."
+                    )
+            bible_relative = config.bible
+            source_relative = config.source_directory
+            bible_path = (
+                bible_relative
+                if bible_relative.is_absolute()
+                else self.path.parent / bible_relative
+            )
+            if bible_text is not None:
+                if bible_path.exists():
+                    raise ValidationError(
+                        f"Bible file already exists: {bible_path}. "
+                        "Remove it before registering this novel."
+                    )
+            else:
+                load_bible(bible_path)
+            source_directory = (
+                source_relative
+                if source_relative.is_absolute()
+                else self.path.parent / source_relative
+            )
+            source_directory.mkdir(parents=True, exist_ok=True)
+            created: list[Path] = []
+            try:
+                if bible_text is not None:
+                    bible_path.parent.mkdir(parents=True, exist_ok=True)
+                    bible_path.write_text(bible_text, encoding="utf-8")
+                    created.append(bible_path)
+                for name, content in (source_files or {}).items():
+                    target = source_directory / name
+                    if (
+                        target.exists()
+                        and target not in created
+                        and target != bible_path
+                    ):
+                        raise ValidationError(
+                            f"Source file already exists: {target}. "
+                            "Remove it before registering this novel."
+                        )
+                    target.write_text(content, encoding="utf-8")
+                    created.append(target)
+                raw_text = self.path.read_text(encoding="utf-8")
+                decoded: object = yaml.safe_load(raw_text)
+                if not isinstance(decoded, dict):
+                    raise ValidationError(
+                        "Invalid novel catalog: 'novels' map."
+                    )
+                raw = cast(dict[Any, Any], decoded)
+                if not isinstance(raw.get("novels"), dict):
+                    raise ValidationError(
+                        "Invalid novel catalog: 'novels' map."
+                    )
+                novels_map = cast(dict[str, Any], raw["novels"])
+                novels_map[normalized] = config.model_dump(mode="json")
+                content = yaml.safe_dump(
+                    raw, allow_unicode=True, sort_keys=True
+                )
+                parent = self.path.parent
+                parent.mkdir(parents=True, exist_ok=True)
+                descriptor: int | None = None
+                temporary: Path | None = None
+                try:
+                    descriptor, name = tempfile.mkstemp(
+                        dir=str(parent), prefix=".novels-", suffix=".yaml"
+                    )
+                    temporary = Path(name)
+                    with os.fdopen(
+                        descriptor, "w", encoding="utf-8"
+                    ) as handle:
+                        descriptor = None
+                        handle.write(content)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                    temporary.replace(self.path)
+                finally:
+                    if descriptor is not None:
+                        os.close(descriptor)
+                    if temporary is not None and temporary.exists():
+                        with suppress(OSError):
+                            temporary.unlink()
+            except Exception:
+                for path in reversed(created):
+                    with suppress(OSError):
+                        path.unlink()
+                raise
+        fresh = load_catalog(self.path)
+        object.__setattr__(self, "config", fresh.config)
+        object.__setattr__(self, "observed_mtime_ns", fresh.observed_mtime_ns)
+        return self
+
 
 def load_catalog(path: Path) -> NovelRegistry:
     """Load and validate a UTF-8 YAML novel catalog."""
@@ -231,4 +384,27 @@ def load_catalog(path: Path) -> NovelRegistry:
         config = CatalogConfig.model_validate(loaded)
     except (OSError, UnicodeError, yaml.YAMLError, ValueError) as error:
         raise ValidationError(f"Invalid novel catalog: {error}") from error
-    return NovelRegistry(resolved, config)
+    try:
+        observed = resolved.stat().st_mtime_ns
+    except OSError:
+        observed = None
+    return NovelRegistry(resolved, config, observed)
+
+
+def ensure_catalog_seeded(seed: Path, target: Path) -> Path:
+    """Copy the baked-in catalog to the volume exactly once."""
+    resolved = target if target.is_absolute() else Path.cwd() / target
+    resolved = resolved.resolve()
+    if resolved.exists():
+        return resolved
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        seed_text = seed.resolve().read_text(encoding="utf-8")
+    except OSError, UnicodeError:
+        return resolved
+    try:
+        with resolved.open("x", encoding="utf-8") as handle:
+            handle.write(seed_text)
+    except FileExistsError:
+        return resolved
+    return resolved

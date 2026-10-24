@@ -33,6 +33,8 @@ spec:
             - containerPort: 8000
           env:
             - name: NOVEL_TRANSLATOR_CATALOG
+              value: "/data/novels.yaml"
+            - name: NOVEL_TRANSLATOR_CATALOG_SEED
               value: "/app/novels.yaml"
             - name: NOVEL_TRANSLATOR_WORKSPACE
               value: "/data"
@@ -99,6 +101,8 @@ spec:
           command: ["novel-translator-worker"]
           env:
             - name: NOVEL_TRANSLATOR_CATALOG
+              value: "/data/novels.yaml"
+            - name: NOVEL_TRANSLATOR_CATALOG_SEED
               value: "/app/novels.yaml"
             - name: NOVEL_TRANSLATOR_WORKSPACE
               value: "/data"

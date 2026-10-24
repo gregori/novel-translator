@@ -125,6 +125,26 @@ Python code **must** pass the quality gates listed in
 - Listings must not materialize large payload columns: defer
   `source_text`-sized fields and project summaries for polls/scans.
 
+### Phase 6 — Novel registration and bundle sync
+
+- Baked-in config must seed the volume once (`open(..., "x")`), never
+  overwrite: the PVC copy is authoritative, the image copy is only a seed.
+- Mutable single-file state shared across processes needs per-instance
+  observed-mtime reload, not a global mtime cache: a global cache updated
+  by the writer blinds every other live instance to the change.
+- Retry-tolerant middleware must fail loud after a few stale serves:
+  suppress-forever hides persistent corruption behind 200s.
+- Registry writes belong inside the filelock with rollback of created
+  files: pre-lock validation plus post-lock append orphans files and can
+  leave the loser’s bytes under the winner’s catalog row.
+- Zip import needs pre-read caps (entries + uncompressed bytes from
+  metadata), backslash/colon/segment rejection, and commonpath anchoring:
+  the 50 MB upload ceiling is compressed size and says nothing about OOM.
+- Imported identity is untrusted input: validate novel/chapter against the
+  URL scope before persisting and re-resolve the novel before redirecting.
+- In Python 3.14 `except A, B:` is PEP 758 tuple syntax (ruff-canonical),
+  not a SyntaxError — but prefer explicit parentheses for readability.
+
 ## Self-learning
 
 - After each defect or review finding, extract the reusable invariant, add a

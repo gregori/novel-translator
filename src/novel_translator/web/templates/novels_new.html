@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}New novel — Novel Translator{% endblock %}
+{% block content %}
+<h1>New novel</h1>
+<p class="subtitle">Register a novel with its translation bible. Sources can come later — upload <code>chapter-N.md</code> files now, or translate from the <a href="/translate">Translate</a> page.</p>
+
+{% if error %}
+<div class="notice warn">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="/novels/new" enctype="multipart/form-data" class="card form">
+  <label for="novel_id">Novel id</label>
+  <input id="novel_id" name="novel_id" required value="{{ values.novel_id }}"
+         placeholder="e.g. gariben" pattern="[a-z0-9][a-z0-9-]*"
+         title="Lowercase letters, digits, and hyphens.">
+  <div class="hint">Lowercase letters, digits, and hyphens. Used in URLs and the catalog.</div>
+
+  <label for="title">Title</label>
+  <input id="title" name="title" required value="{{ values.title }}"
+         placeholder="e.g. The Studious Boy and the Secret Account Girl">
+
+  <label for="provider">Provider</label>
+  <input id="provider" name="provider" value="{{ values.provider }}" placeholder="opencode-go">
+
+  <label for="model">Model</label>
+  <input id="model" name="model" required value="{{ values.model }}" placeholder="e.g. deepseek-v4-flash">
+
+  <label for="volume">Volume <span class="muted">(optional)</span></label>
+  <input id="volume" name="volume" type="number" min="1" inputmode="numeric"
+         value="{{ values.volume }}" placeholder="Catalog default">
+
+  <label for="kakuyomu_work">Kakuyomu work URL <span class="muted">(optional)</span></label>
+  <input id="kakuyomu_work" name="kakuyomu_work" type="url" value="{{ values.kakuyomu_work }}"
+         placeholder="https://kakuyomu.jp/works/1234567890123456789">
+  <div class="hint">The work page; episode fetching appends <code>/episodes</code> automatically.</div>
+
+  <label for="export_repository">Export repository</label>
+  <input id="export_repository" name="export_repository" value="{{ values.export_repository }}"
+         placeholder="gregori/novels-site">
+
+  <label for="export_directory">Export directory <span class="muted">(optional)</span></label>
+  <input id="export_directory" name="export_directory" value="{{ values.export_directory }}"
+         placeholder="Defaults to src/content/titles/&lt;novel-id&gt;">
+
+  <label for="export_filename_template">Export filename template</label>
+  <input id="export_filename_template" name="export_filename_template"
+         value="{{ values.export_filename_template }}">
+
+  <label for="bible_text">Translation bible (YAML)</label>
+  <textarea id="bible_text" name="bible_text" rows="14" spellcheck="false">
+{{ values.bible_text }}</textarea>
+  <div class="hint">Edit in place, or upload a YAML file instead — exactly one of the two.</div>
+  <label for="bible_upload">Bible file <span class="muted">(optional, UTF-8, ≤1 MB)</span></label>
+  <input type="file" id="bible_upload" name="bible_upload" accept=".yaml,.yml,text/yaml">
+
+  <label for="source_files">Initial sources <span class="muted">(optional, chapter-N.md, UTF-8, ≤1 MB each)</span></label>
+  <input type="file" id="source_files" name="source_files" multiple accept=".md,.txt,text/plain">
+  <div class="hint">Skip when chapters arrive later via upload or episode on the Translate page.</div>
+
+  <div class="toolbar">
+    <button class="btn" type="submit">Register novel</button>
+  </div>
+</form>
+{% endblock %}

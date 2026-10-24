@@ -34,6 +34,15 @@
   {% endfor %}
 </div>
 
+<div class="card">
+  <p class="muted">Sync a run from another machine into this library.</p>
+  <form method="post" action="/bundles/import" enctype="multipart/form-data" class="toolbar">
+    <input type="hidden" name="novel" value="{{ novel }}">
+    <input type="file" name="bundle" accept=".ntbundle,.zip" aria-label="Run bundle to import">
+    <button type="submit" class="secondary">Import bundle</button>
+  </form>
+</div>
+
 <div id="chapter-results">
   {% include "partials/chapter_list.html" %}
 </div>

@@ -1,7 +1,9 @@
 FROM python:3.14-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    NOVEL_TRANSLATOR_CATALOG=/data/novels.yaml \
+    NOVEL_TRANSLATOR_CATALOG_SEED=/app/novels.yaml
 
 WORKDIR /app
 
@@ -22,8 +24,9 @@ COPY novels.yaml ./
 COPY config/ ./config/
 COPY novel-sources/ ./novel-sources/
 
-RUN pip install --no-cache-dir --no-deps . \
-    && chown -R novel:novel /app
+RUN mkdir /data \
+    && pip install --no-cache-dir --no-deps . \
+    && chown -R novel:novel /app /data
 
 USER novel
 
